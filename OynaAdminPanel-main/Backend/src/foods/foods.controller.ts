@@ -1,0 +1,58 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { Request } from 'express';
+import { Types } from 'mongoose';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { FoodsService } from './foods.service';
+import { Food } from './schemas/food.schema';
+
+interface AuthRequest extends Request {
+  user: { sub: string; email: string; displayName?: string };
+}
+
+@UseGuards(JwtAuthGuard)
+@Controller('foods')
+export class FoodsController {
+  constructor(private readonly foodsService: FoodsService) {}
+
+  @Post()
+  create(@Body() dto: Partial<Food>, @Req() req: AuthRequest) {
+    return this.foodsService.create({
+      ...dto,
+      adminId: new Types.ObjectId(req.user.sub),
+    });
+  }
+
+  @Get()
+  findAll(@Req() req: AuthRequest) {
+    return this.foodsService.findAll(req.user.sub);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string, @Req() req: AuthRequest) {
+    return this.foodsService.findOne(id, req.user.sub);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: Partial<Food>,
+    @Req() req: AuthRequest,
+  ) {
+    return this.foodsService.update(id, dto, req.user.sub);
+  }
+
+  @Delete(':id')
+  remove(@Param('id') id: string, @Req() req: AuthRequest) {
+    return this.foodsService.remove(id, req.user.sub);
+  }
+}

@@ -1,0 +1,1 @@
+Bu fayl sadəcə Github Actions-da yaşıl işarənin (Checkmark) çıxmasını test etmək üçün yaradılıb. Üzərindəki yaşıl işarəyə baxa bilərsiniz!

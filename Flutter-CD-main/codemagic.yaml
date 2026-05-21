@@ -1,0 +1,22 @@
+workflows:
+  ios-simulator:
+    name: iOS Simulator for Appetize
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+      - name: Build iOS Simulator
+        script: |
+          flutter build ios --simulator --debug --no-codesign
+      - name: Zip the .app for Appetize
+        script: |
+          cd build/ios/iphonesimulator
+          zip -r Runner.zip Runner.app
+    artifacts:
+      - build/ios/iphonesimulator/*.zip

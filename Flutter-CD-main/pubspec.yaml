@@ -1,0 +1,46 @@
+name: flutter_cd
+description: "Lucid Entertainment - Discovery App"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  cached_network_image: ^3.4.1
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+  shared_preferences: ^2.5.5
+  firebase_core: ^4.6.0
+  firebase_auth: ^6.3.0
+  google_sign_in: ^7.2.0
+  font_awesome_flutter: ^11.0.0
+  dio: ^5.8.0+1
+  flutter_riverpod: ^2.6.1
+  url_launcher: ^6.3.2
+  socket_io_client: ^3.1.4
+  flutter_local_notifications: ^21.0.0
+  firebase_messaging: ^16.2.0
+  intl: ^0.20.2
+  flutter_localizations:
+    sdk: flutter
+  geolocator: ^14.0.2
+  flutter_map_marker_cluster: ^8.2.2
+  shimmer: ^3.0.0
+  package_info_plus: ^9.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/images/

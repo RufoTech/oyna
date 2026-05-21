@@ -1,0 +1,40 @@
+platform :ios, '15.0'
+
+# CocoaPods analytics sends network stats synchronously affecting build performance.
+# To disable it, uncomment the next line:
+# ENV['COCOAPODS_DISABLE_STATS'] = '1'
+
+# The standard Flutter way is to require the generated podhelper
+# This file is created by 'flutter pub get' or 'flutter build ios'
+podhelper_path = File.expand_path(File.join('..', 'Flutter', 'generated_podhelper.rb'), __FILE__)
+
+if File.exist?(podhelper_path)
+  require podhelper_path
+else
+  # Fallback to SDK podhelper
+  flutter_root = ENV['FLUTTER_ROOT']
+  if flutter_root
+    sdk_podhelper = File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper.rb'), flutter_root)
+    require sdk_podhelper if File.exist?(sdk_podhelper)
+  end
+end
+
+target 'Runner' do
+  use_frameworks! :linkage => :static
+  use_modular_headers!
+
+  if defined?(flutter_install_all_ios_pods)
+    flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target) if defined?(flutter_additional_ios_build_settings)
+    
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+    end
+  end
+end
+
