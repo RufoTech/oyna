@@ -231,8 +231,7 @@ export class AuthService implements OnModuleInit {
       .exec();
 
     if (!user) {
-      // Don't reveal if user exists
-      return { message: 'Əgər bu email mövcuddursa, sıfırlama kodu göndərildi.' };
+      throw new BadRequestException('Bu email ilə hesab tapılmadı.');
     }
 
     const resetCode = this.generateOtp();
@@ -242,7 +241,7 @@ export class AuthService implements OnModuleInit {
 
     await this.brevoService.sendResetPasswordEmail(user.email, resetCode);
 
-    return { message: 'Əgər bu email mövcuddursa, sıfırlama kodu göndərildi.' };
+    return { message: 'Sıfırlama kodu e-poçtunuza göndərildi.' };
   }
 
   // ══════════════════════════════════════════════════════════════

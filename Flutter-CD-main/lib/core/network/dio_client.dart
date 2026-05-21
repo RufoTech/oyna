@@ -48,7 +48,19 @@ class DioClient {
       },
       onError: (error, handler) async {
         // Handle 401 Unauthorized — token expired or invalid
-        if (error.response?.statusCode == 401) {
+        final path = error.requestOptions.path;
+        final isAuthPath = [
+          '/auth/login',
+          '/auth/register',
+          '/auth/verify-otp',
+          '/auth/resend-otp',
+          '/auth/forgot-password',
+          '/auth/verify-reset-code',
+          '/auth/reset-password',
+          '/auth/google'
+        ].any((element) => path.contains(element));
+
+        if (error.response?.statusCode == 401 && !isAuthPath) {
           debugPrint('DioClient: 401 Unauthorized — clearing token and redirecting to login.');
           await AuthService().signOut();
 

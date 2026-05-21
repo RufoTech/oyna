@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../shared/widgets/glass_panel.dart';
+import '../../../../shared/widgets/custom_warning_dialog.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/network/dio_client.dart';
 import 'package:dio/dio.dart';
@@ -40,7 +41,21 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
-      setState(() => _errorText = AppLocalizations.of(context)!.loginErrorEmpty);
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.loginErrorEmpty,
+      );
+      return;
+    }
+
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.invalidEmailAddress,
+      );
       return;
     }
 
@@ -83,12 +98,31 @@ class _LoginScreenState extends State<LoginScreen> {
       if (e is DioException && e.response?.data != null) {
         final data = e.response!.data;
         if (data is Map && data['message'] != null) {
-          setState(() => _errorText = data['message']);
+          final rawMessage = data['message'];
+          String displayMessage = '';
+          if (rawMessage is List) {
+            displayMessage = rawMessage.map((m) => '• $m').join('\n');
+          } else {
+            displayMessage = rawMessage.toString();
+          }
+          showCustomWarningDialog(
+            context: context,
+            title: AppLocalizations.of(context)!.attention,
+            message: displayMessage,
+          );
         } else {
-          setState(() => _errorText = AppLocalizations.of(context)!.loginErrorInvalid);
+          showCustomWarningDialog(
+            context: context,
+            title: AppLocalizations.of(context)!.attention,
+            message: AppLocalizations.of(context)!.loginErrorInvalid,
+          );
         }
       } else {
-        setState(() => _errorText = AppLocalizations.of(context)!.loginErrorNetwork);
+        showCustomWarningDialog(
+          context: context,
+          title: AppLocalizations.of(context)!.attention,
+          message: AppLocalizations.of(context)!.loginErrorNetwork,
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

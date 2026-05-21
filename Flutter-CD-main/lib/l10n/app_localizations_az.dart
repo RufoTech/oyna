@@ -938,4 +938,17 @@ class AppLocalizationsAz extends AppLocalizations {
   @override
   String get privacyPolicyContent =>
       'Oyna platformasına xoş gəlmisiniz. Bu Məxfilik Siyasəti Oyna mobil tətbiqindən istifadə edərkən məlumatlarınızın necə toplandığını, istifadə olunduğunu və paylaşıldığını izah edir.\n\n1. Topladığımız Məlumatlar\nBiz, tətbiqdə qeydiyyatdan keçərkən təqdim etdiyiniz ad, e-poçt ünvanı, profil şəkli və rezervasiya məlumatlarını toplayırıq.\n\n2. Məlumatların İstifadəsi\nToplanan məlumatlar rezervasiya proseslərinin idarə edilməsi, məkan sahibləri ilə əlaqə yaradılması və istifadəçi təcrübəsinin yaxşılaşdırılması üçün istifadə olunur.\n\n3. Məlumatların Paylaşılması\nMəlumatlarınız müvafiq dərəcədə yalnız rezervasiya etdiyiniz məkan sahibləri ilə paylaşılır. Digər heç bir üçüncü tərəfə reklam qəsdi ilə satılmır.\n\n4. Məlumatların Qorunması\nMüştərilərin məlumatlarının təhlükəsizliyi bizim üçün prioritetdir. Şifrələmə və müasir təhlükəsizlik protokolları ilə məlumatlarınız qorunur.\n\n5. Uşaqların Məxfiliyi\nBiz 13 yaşdan aşağı uşaqlardan qəsdən məlumat toplamırıq.\n\n6. Hesabın Silinməsi\nSiz istənilən vaxt profilinizdən \'Hesabı sil\' bölməsindən istifadə edərək bütün məlumatlarınızı sistemdən silə bilərsiniz.\n\nBizimlə əlaqə üçün support@oyna.app ünvanına yaza bilərsiniz.';
+
+  @override
+  String get logoutConfirmTitle => 'Hesabdan çıxış';
+
+  @override
+  String get logoutConfirmMessage =>
+      'Hesabınızdan çıxış etmək istədiyinizə əminsiniz?';
+
+  @override
+  String get yesLogout => 'Bəli, çıx';
+
+  @override
+  String get invalidEmailAddress => 'Düzgün e-poçt ünvanı daxil edin.';
 }

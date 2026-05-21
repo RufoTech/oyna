@@ -938,4 +938,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get privacyPolicyContent =>
       'Welcome to Oyna. This Privacy Policy explains how your information is collected, used, and shared when you use the Oyna mobile app.\n\n1. Information We Collect\nWe collect information such as your name, email address, profile picture, and reservation details provided during registration.\n\n2. How We Use Information\nThe collected data is used to manage reservations, communicate with venue owners, and improve the user experience.\n\n3. Information Sharing\nYour information is only shared with the venues you book. We do not sell your data to third-party advertisers.\n\n4. Data Security\nProtecting customer data is our priority. Your data is secured with encryption and modern security protocols.\n\n5. Children\'s Privacy\nWe do not knowingly collect personal information from children under 13.\n\n6. Account Deletion\nYou can permanently delete your account and all associated data at any time using the \'Delete Account\' feature in your profile.\n\nIf you have any questions, contact us at support@oyna.app.';
+
+  @override
+  String get logoutConfirmTitle => 'Log Out';
+
+  @override
+  String get logoutConfirmMessage =>
+      'Are you sure you want to log out of your account?';
+
+  @override
+  String get yesLogout => 'Yes, log out';
+
+  @override
+  String get invalidEmailAddress => 'Please enter a valid email address.';
 }

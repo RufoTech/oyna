@@ -7,6 +7,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../shared/widgets/custom_warning_dialog.dart';
 import 'package:dio/dio.dart';
 import '../../../home/presentation/screens/main_screen.dart';
 import 'otp_verification_screen.dart';
@@ -43,15 +44,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final confirmPassword = _confirmPasswordController.text;
 
     if (name.isEmpty || email.isEmpty || password.isEmpty) {
-      setState(() => _errorText = AppLocalizations.of(context)!.registerErrorEmpty);
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.registerErrorEmpty,
+      );
       return;
     }
+
+    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+    if (!emailRegex.hasMatch(email)) {
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.invalidEmailAddress,
+      );
+      return;
+    }
+
     if (password.length < 6) {
-      setState(() => _errorText = AppLocalizations.of(context)!.registerErrorPasswordShort);
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.registerErrorPasswordShort,
+      );
       return;
     }
     if (password != confirmPassword) {
-      setState(() => _errorText = AppLocalizations.of(context)!.registerErrorPasswordsDontMatch);
+      showCustomWarningDialog(
+        context: context,
+        title: AppLocalizations.of(context)!.attention,
+        message: AppLocalizations.of(context)!.registerErrorPasswordsDontMatch,
+      );
       return;
     }
 
@@ -77,7 +101,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (e is DioException && e.response?.data != null) {
         final data = e.response!.data;
         if (data is Map && data['message'] != null) {
-          final msg = data['message'].toString().toLowerCase();
+          final rawMessage = data['message'];
+          String displayMessage = '';
+          if (rawMessage is List) {
+            displayMessage = rawMessage.map((m) => '• $m').join('\n');
+          } else {
+            displayMessage = rawMessage.toString();
+          }
+
+          final msg = displayMessage.toLowerCase();
           if (e.response?.statusCode == 409 || msg.contains('already') || msg.contains('mövcud') || msg.contains('exists') || msg.contains('istifadə')) {
             if (mounted) {
               setState(() => _isLoading = false);
@@ -85,12 +117,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
             }
             return;
           }
-          setState(() => _errorText = data['message']);
+          showCustomWarningDialog(
+            context: context,
+            title: AppLocalizations.of(context)!.attention,
+            message: displayMessage,
+          );
         } else {
-          setState(() => _errorText = AppLocalizations.of(context)!.registerErrorGeneral);
+          showCustomWarningDialog(
+            context: context,
+            title: AppLocalizations.of(context)!.attention,
+            message: AppLocalizations.of(context)!.registerErrorGeneral,
+          );
         }
       } else {
-        setState(() => _errorText = AppLocalizations.of(context)!.loginErrorNetwork);
+        showCustomWarningDialog(
+          context: context,
+          title: AppLocalizations.of(context)!.attention,
+          message: AppLocalizations.of(context)!.loginErrorNetwork,
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -439,29 +483,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
         const SizedBox(height: 32),
-
-        if (_errorText != null) ...[
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.errorContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.error_outline, color: AppColors.error),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _errorText!,
-                    style: AppTypography.bodyMedium.copyWith(color: AppColors.onErrorContainer),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
 
         // Submit Button
         ElevatedButton(

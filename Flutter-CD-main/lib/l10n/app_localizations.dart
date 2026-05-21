@@ -1851,6 +1851,30 @@ abstract class AppLocalizations {
   /// In az, this message translates to:
   /// **'Oyna platformasına xoş gəlmisiniz. Bu Məxfilik Siyasəti Oyna mobil tətbiqindən istifadə edərkən məlumatlarınızın necə toplandığını, istifadə olunduğunu və paylaşıldığını izah edir.\n\n1. Topladığımız Məlumatlar\nBiz, tətbiqdə qeydiyyatdan keçərkən təqdim etdiyiniz ad, e-poçt ünvanı, profil şəkli və rezervasiya məlumatlarını toplayırıq.\n\n2. Məlumatların İstifadəsi\nToplanan məlumatlar rezervasiya proseslərinin idarə edilməsi, məkan sahibləri ilə əlaqə yaradılması və istifadəçi təcrübəsinin yaxşılaşdırılması üçün istifadə olunur.\n\n3. Məlumatların Paylaşılması\nMəlumatlarınız müvafiq dərəcədə yalnız rezervasiya etdiyiniz məkan sahibləri ilə paylaşılır. Digər heç bir üçüncü tərəfə reklam qəsdi ilə satılmır.\n\n4. Məlumatların Qorunması\nMüştərilərin məlumatlarının təhlükəsizliyi bizim üçün prioritetdir. Şifrələmə və müasir təhlükəsizlik protokolları ilə məlumatlarınız qorunur.\n\n5. Uşaqların Məxfiliyi\nBiz 13 yaşdan aşağı uşaqlardan qəsdən məlumat toplamırıq.\n\n6. Hesabın Silinməsi\nSiz istənilən vaxt profilinizdən \'Hesabı sil\' bölməsindən istifadə edərək bütün məlumatlarınızı sistemdən silə bilərsiniz.\n\nBizimlə əlaqə üçün support@oyna.app ünvanına yaza bilərsiniz.'**
   String get privacyPolicyContent;
+
+  /// No description provided for @logoutConfirmTitle.
+  ///
+  /// In az, this message translates to:
+  /// **'Hesabdan çıxış'**
+  String get logoutConfirmTitle;
+
+  /// No description provided for @logoutConfirmMessage.
+  ///
+  /// In az, this message translates to:
+  /// **'Hesabınızdan çıxış etmək istədiyinizə əminsiniz?'**
+  String get logoutConfirmMessage;
+
+  /// No description provided for @yesLogout.
+  ///
+  /// In az, this message translates to:
+  /// **'Bəli, çıx'**
+  String get yesLogout;
+
+  /// No description provided for @invalidEmailAddress.
+  ///
+  /// In az, this message translates to:
+  /// **'Düzgün e-poçt ünvanı daxil edin.'**
+  String get invalidEmailAddress;
 }
 
 class _AppLocalizationsDelegate
