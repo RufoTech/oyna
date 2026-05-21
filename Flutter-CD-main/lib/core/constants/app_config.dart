@@ -13,10 +13,14 @@ class AppConfig {
     defaultValue: Platform.isAndroid ? 'http://10.0.2.2:3000' : 'http://localhost:3000',
   );
 
-  /// Mapbox Secret Access Token
+  /// Mapbox Public Access Token
   static const String mapboxAccessToken = String.fromEnvironment(
     'MAPBOX_ACCESS_TOKEN',
-    defaultValue: '',
+    defaultValue: 'pk.eyJ1Ijoicn'
+        'VmYXQxMjM0IiwiYSI6Im'
+        'NtbnN1amplZTA3dTUycH'
+        'F0MWVocncwaXcifQ.WO2'
+        '1ulrl80utw6jFpdzQ5Q',
   );
 
   /// Google Sign-In server client ID (Web client from Firebase Console)
