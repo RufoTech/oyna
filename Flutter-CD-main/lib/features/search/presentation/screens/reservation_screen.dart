@@ -346,6 +346,27 @@ class _ReservationScreenState extends State<ReservationScreen> {
       return;
     }
 
+    const allowedPrefixes = {'50', '51', '10', '55', '99', '70', '77', '60'};
+    if (phone.length < 9) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Telefon nömrəsi 9 rəqəmdən ibarət olmalıdır.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    final prefix = phone.substring(0, 2);
+    if (!allowedPrefixes.contains(prefix)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Yanlış operator nömrəsi. Yalnız 50, 51, 10, 55, 99, 70, 77, 60 ola bilər.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
     final now = DateTime.now();
     final reservationDateTime = DateTime(
       now.year,

@@ -1,172 +1,279 @@
 import 'package:flutter/material.dart';
 import '../../../../../core/models/layout_item_model.dart';
-import '../../../../../core/theme/app_colors.dart';
 
-class FloorPlanViewer extends StatelessWidget {
+class FloorPlanViewer extends StatefulWidget {
   final List<LayoutItem> items;
   final String? selectedTableId;
   final ValueChanged<LayoutItem>? onTableSelected;
+  final TransformationController transformationController;
 
   const FloorPlanViewer({
     super.key,
     required this.items,
+    required this.transformationController,
     this.selectedTableId,
     this.onTableSelected,
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const Center(
-        child: Text('Mərtəbə planı tapılmadı.',
-            style: TextStyle(color: Colors.grey)),
-      );
-    }
+  State<FloorPlanViewer> createState() => _FloorPlanViewerState();
+}
 
-    // Determine the bounding box of the layout to size the canvas
+class _FloorPlanViewerState extends State<FloorPlanViewer> {
+  bool _isInitialized = false;
+  Size? _lastViewportSize;
+  List<LayoutItem>? _lastItems;
+
+  void _initializeZoomAndPosition(double viewportWidth, double viewportHeight) {
+    if (widget.items.isEmpty) return;
+
     double minX = double.infinity, minY = double.infinity;
-    double maxX = 0, maxY = 0;
+    double maxX = -double.infinity, maxY = -double.infinity;
 
-    for (var item in items) {
+    for (var item in widget.items) {
       if (item.x < minX) minX = item.x;
       if (item.y < minY) minY = item.y;
       if (item.x + item.w > maxX) maxX = item.x + item.w;
       if (item.y + item.h > maxY) maxY = item.y + item.h;
     }
 
-    // Add padding
-    final width = maxX + 40;
-    final height = maxY + 40;
+    final layoutWidth = maxX - minX;
+    final layoutHeight = maxY - minY;
 
-    return Center(
-      child: InteractiveViewer(
-        minScale: 0.1,
-        maxScale: 4.0,
-        constrained: false,
-        boundaryMargin: const EdgeInsets.all(double.infinity),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC), // slate-50
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white, width: 2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 24,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: items.map((item) {
-              return Positioned(
-                left: item.x + 20,
-                top: item.y + 20,
-                width: item.w,
-                height: item.h,
-                child: _buildLayoutItem(context, item),
-              );
-            }).toList(),
-          ),
+    const double padding = 32.0;
+    final containerWidth = layoutWidth + padding * 2;
+    final containerHeight = layoutHeight + padding * 2;
+
+    double scaleX = viewportWidth / containerWidth;
+    double scaleY = viewportHeight / containerHeight;
+    double initialScale = scaleX < scaleY ? scaleX : scaleY;
+
+    // Constrain scale to avoid excessive scaling for small maps
+    if (initialScale > 1.2) {
+      initialScale = 1.2;
+    }
+    if (initialScale < 0.25) {
+      initialScale = 0.25;
+    }
+
+    final dx = (viewportWidth - containerWidth * initialScale) / 2;
+    final dy = (viewportHeight - containerHeight * initialScale) / 2;
+
+    widget.transformationController.value = Matrix4.translationValues(dx, dy, 0.0)
+      * Matrix4.diagonal3Values(initialScale, initialScale, 1.0);
+    
+    _isInitialized = true;
+    _lastViewportSize = Size(viewportWidth, viewportHeight);
+    _lastItems = widget.items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.items.isEmpty) {
+      return const Center(
+        child: Text(
+          'Mərtəbə planı tapılmadı.',
+          style: TextStyle(color: Colors.grey, fontSize: 16),
         ),
-      ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+        
+        // Auto-initialize zoom/position if size, items, or state changes
+        if (!_isInitialized || 
+            _lastViewportSize != viewportSize || 
+            _lastItems != widget.items) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              setState(() {
+                _initializeZoomAndPosition(constraints.maxWidth, constraints.maxHeight);
+              });
+            }
+          });
+        }
+
+        // Bounding box calculations
+        double minX = double.infinity, minY = double.infinity;
+        double maxX = -double.infinity, maxY = -double.infinity;
+
+        for (var item in widget.items) {
+          if (item.x < minX) minX = item.x;
+          if (item.y < minY) minY = item.y;
+          if (item.x + item.w > maxX) maxX = item.x + item.w;
+          if (item.y + item.h > maxY) maxY = item.y + item.h;
+        }
+
+        final layoutWidth = maxX - minX;
+        final layoutHeight = maxY - minY;
+        
+        // Shift map content by padding so it sits beautifully within boundaries
+        const double padding = 32.0;
+        final containerWidth = layoutWidth + padding * 2;
+        final containerHeight = layoutHeight + padding * 2;
+
+        return InteractiveViewer(
+          transformationController: widget.transformationController,
+          minScale: 0.1,
+          maxScale: 3.0,
+          constrained: false,
+          boundaryMargin: const EdgeInsets.all(400.0),
+          child: Container(
+            width: containerWidth,
+            height: containerHeight,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.4), // dark-slate backdrop
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.05), width: 1.5),
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: widget.items.map((item) {
+                // Offset mapping relative to origin (minX, minY)
+                final double leftPos = item.x - minX + padding;
+                final double topPos = item.y - minY + padding;
+
+                return Positioned(
+                  left: leftPos,
+                  top: topPos,
+                  width: item.w,
+                  height: item.h,
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: _buildLayoutItem(context, item),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildLayoutItem(BuildContext context, LayoutItem item) {
-    final isSelected = item.id == selectedTableId;
+    final isSelected = item.id == widget.selectedTableId;
     
-    List<Color> gradientColors;
-    Color shadowColor;
+    Color statusColor;
+    Color glowColor;
+    IconData itemIcon;
 
     switch (item.status) {
       case 'available':
-        gradientColors = [const Color(0xFF10B981), const Color(0xFF059669)];
-        shadowColor = const Color(0xFF10B981);
+        statusColor = const Color(0xFF10B981); // Emerald
+        glowColor = const Color(0xFF10B981).withValues(alpha: 0.35);
         break;
       case 'reserved':
-        gradientColors = [const Color(0xFFF59E0B), const Color(0xFFD97706)];
-        shadowColor = const Color(0xFFF59E0B);
+        statusColor = const Color(0xFFF59E0B); // Amber
+        glowColor = const Color(0xFFF59E0B).withValues(alpha: 0.25);
         break;
       case 'occupied':
-        gradientColors = [const Color(0xFFEF4444), const Color(0xFFDC2626)];
-        shadowColor = const Color(0xFFEF4444);
+        statusColor = const Color(0xFFEF4444); // Red
+        glowColor = const Color(0xFFEF4444).withValues(alpha: 0.25);
         break;
       case 'disabled':
-        gradientColors = [const Color(0xFF94A3B8), const Color(0xFF64748B)];
-        shadowColor = const Color(0xFF94A3B8);
+        statusColor = const Color(0xFF64748B); // Muted slate
+        glowColor = Colors.transparent;
         break;
       default:
-        gradientColors = [Colors.grey.shade400, Colors.grey.shade600];
-        shadowColor = Colors.grey;
+        statusColor = Colors.grey;
+        glowColor = Colors.transparent;
     }
 
     if (isSelected) {
-      gradientColors = [AppColors.primary, AppColors.primary.withValues(alpha: 0.8)];
-      shadowColor = AppColors.primary;
+      statusColor = const Color(0xFF06B6D4); // Bright Cyan
+      glowColor = const Color(0xFF06B6D4).withValues(alpha: 0.55);
     }
+
+    switch (item.type) {
+      case 'playstation':
+        itemIcon = Icons.gamepad_rounded;
+        break;
+      case 'room':
+        itemIcon = Icons.meeting_room_rounded;
+        break;
+      default:
+        itemIcon = Icons.computer_rounded;
+    }
+
+    // Dynamic sizing to make tables look "smaller and normal"
+    final double maxW = item.type == 'room' ? 90.0 : 54.0;
+    final double maxH = item.type == 'room' ? 76.0 : 54.0;
+    
+    final double w = item.w < maxW ? item.w : maxW;
+    final double h = item.h < maxH ? item.h : maxH;
 
     return GestureDetector(
       onTap: () {
-        if (item.status == 'available' && onTableSelected != null) {
-          onTableSelected!(item);
+        if (item.status == 'available' && widget.onTableSelected != null) {
+          widget.onTableSelected!(item);
         }
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 200),
+        width: w,
+        height: h,
         curve: Curves.easeOutCubic,
+        transform: Matrix4.diagonal3Values(isSelected ? 1.08 : 1.0, isSelected ? 1.08 : 1.0, 1.0),
+        transformAlignment: Alignment.center,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: gradientColors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
+          color: isSelected
+              ? const Color(0xFF0F172A).withValues(alpha: 0.95)
+              : const Color(0xFF1E293B).withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(item.type == 'room' ? 14 : 10),
           border: Border.all(
-            color: Colors.white.withValues(alpha: 0.3),
-            width: 1.5,
+            color: isSelected
+                ? const Color(0xFF22D3EE) // Bright Cyan Border
+                : statusColor.withValues(alpha: 0.9),
+            width: isSelected ? 2.5 : 1.5,
           ),
           boxShadow: [
             BoxShadow(
-              color: shadowColor.withValues(alpha: isSelected ? 0.6 : 0.3),
-              blurRadius: isSelected ? 16 : 8,
-              spreadRadius: isSelected ? 2 : 0,
-              offset: const Offset(0, 4),
+              color: isSelected ? const Color(0xFF06B6D4).withValues(alpha: 0.4) : glowColor,
+              blurRadius: isSelected ? 12 : 6,
+              spreadRadius: isSelected ? 1 : 0,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
+            // Status Icon
+            Positioned(
+              top: item.type == 'room' ? 10 : 8,
               child: Icon(
-                item.type == 'playstation' ? Icons.gamepad_rounded : item.type == 'room' ? Icons.meeting_room_rounded : Icons.computer_rounded,
-                color: Colors.white,
-                size: item.w > 60 ? 24 : 16,
+                itemIcon,
+                color: isSelected ? const Color(0xFF22D3EE) : statusColor,
+                size: item.type == 'room' ? 22 : 16,
               ),
             ),
-            const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                item.name,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: item.w > 60 ? 13 : 9,
-                  letterSpacing: 0.3,
+            
+            // Station Name Label
+            Positioned(
+              bottom: item.type == 'room' ? 10 : 6,
+              left: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                child: Text(
+                  item.name,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: item.type == 'room' ? 11 : 9,
+                    letterSpacing: 0.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ],
@@ -175,3 +282,4 @@ class FloorPlanViewer extends StatelessWidget {
     );
   }
 }
+

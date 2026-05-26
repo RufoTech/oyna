@@ -169,6 +169,46 @@ class ReservationDateSection extends StatelessWidget {
   }
 }
 
+/// Custom formatter to handle Azerbaijani phone number inputs.
+/// Automatically removes leading '0' (e.g. 050 -> 50) and limits input to 9 digits.
+class AzerbaijaniPhoneInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final String text = newValue.text;
+
+    if (text.isEmpty) return newValue;
+
+    // Automatically remove leading '0'
+    if (text.startsWith('0')) {
+      final newText = text.substring(1);
+      int newSelectionOffset = newValue.selection.end - 1;
+      if (newSelectionOffset < 0) newSelectionOffset = 0;
+      if (newSelectionOffset > newText.length) newSelectionOffset = newText.length;
+
+      return TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newSelectionOffset),
+      );
+    }
+
+    // Enforce 9-digit max length
+    if (text.length > 9) {
+      final newText = text.substring(0, 9);
+      int newSelectionOffset = newValue.selection.end;
+      if (newSelectionOffset > 9) newSelectionOffset = 9;
+      return TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newSelectionOffset),
+      );
+    }
+
+    return newValue;
+  }
+}
+
 /// Phone number input field.
 class ReservationPhoneInput extends StatelessWidget {
   final TextEditingController controller;
@@ -182,6 +222,22 @@ class ReservationPhoneInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final text = controller.text.trim();
+    const allowedPrefixes = {'50', '51', '10', '55', '99', '70', '77', '60'};
+
+    String? errorText;
+    bool isSuccess = false;
+
+    if (text.isEmpty) {
+      errorText = AppLocalizations.of(context)!.fieldRequired;
+    } else if (text.length >= 2 && !allowedPrefixes.contains(text.substring(0, 2))) {
+      errorText = 'Yanlış operator kodu (yalnız 50, 51, 10, 55, 99, 70, 77, 60)';
+    } else if (text.length < 9) {
+      errorText = 'Nömrə 9 rəqəmdən ibarət olmalıdır';
+    } else {
+      isSuccess = true;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -194,7 +250,10 @@ class ReservationPhoneInput extends StatelessWidget {
           controller: controller,
           keyboardType: TextInputType.phone,
           onChanged: (_) => onChanged(),
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            AzerbaijaniPhoneInputFormatter(),
+          ],
           decoration: InputDecoration(
             hintText: '50 123 45 67',
             prefixText: '+994 ',
@@ -216,19 +275,63 @@ class ReservationPhoneInput extends StatelessWidget {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+              borderSide: BorderSide(
+                color: errorText != null && text.isNotEmpty 
+                    ? AppColors.error 
+                    : isSuccess 
+                        ? const Color(0xFF2E7D32) // Beautiful emerald green
+                        : AppColors.primary, 
+                width: 1.5,
+              ),
             ),
           ),
         ),
         const SizedBox(height: 8),
         Padding(
           padding: const EdgeInsets.only(left: 4),
-          child: Text(
-            AppLocalizations.of(context)!.fieldRequired,
-            style: AppTypography.labelSmall.copyWith(
-              color: AppColors.error,
-              fontWeight: FontWeight.w500,
-            ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: isSuccess
+                ? Row(
+                    key: const ValueKey('success'),
+                    children: [
+                      const Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Düzgün nömrə',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: const Color(0xFF2E7D32),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    key: ValueKey(errorText ?? 'empty'),
+                    children: [
+                      Icon(
+                        errorText == AppLocalizations.of(context)!.fieldRequired
+                            ? Icons.info_outline
+                            : Icons.warning_amber_rounded,
+                        color: errorText == AppLocalizations.of(context)!.fieldRequired
+                            ? AppColors.onSurfaceVariant.withValues(alpha: 0.5)
+                            : AppColors.error,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          errorText ?? '',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: errorText == AppLocalizations.of(context)!.fieldRequired
+                                ? AppColors.onSurfaceVariant.withValues(alpha: 0.6)
+                                : AppColors.error,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
           ),
         ),
       ],
