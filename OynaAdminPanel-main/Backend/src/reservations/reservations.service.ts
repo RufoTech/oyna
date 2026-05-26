@@ -47,7 +47,7 @@ export class ReservationsService {
     const existingPending = await this.reservationModel.findOne({
       userId,
       status: 'pending',
-    });
+    }).lean().exec();
 
     if (existingPending) {
       const existingVenueId = existingPending.venueId?.toString();
@@ -69,29 +69,31 @@ export class ReservationsService {
     // Attach unique reservation number
     dto.reservationNumber = this.generateReservationNumber();
 
-    // In rare case of collision, Mongooses will throw E11000 due to unique index.
-    // For a highly robust system yoasdu would retry in a loop, but 32^6 is ~1 billion, so safe for now.
     const created = new this.reservationModel(dto);
     return created.save();
   }
 
   /** Get all reservations for a specific venue (admin use) */
-  async findByVenue(venueId: string): Promise<Reservation[]> {
+  async findByVenue(venueId: string, page: number = 1, limit: number = 100): Promise<Reservation[]> {
+    const skip = (page - 1) * limit;
     return this.reservationModel
-      .find({ venueId: { $in: [venueId, new Types.ObjectId(venueId)] } })
+      .find({ venueId })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
       .exec();
   }
 
   /** Get all reservations for an admin's venues */
-  async findByAdmin(adminVenueIds: string[]): Promise<Reservation[]> {
-    // venueId may be stored as String or ObjectId depending on how it was created,
-    // so we query for both types to ensure all reservations are found.
-    const objectIds = adminVenueIds.map((id) => new Types.ObjectId(id));
-    const allPossible = [...adminVenueIds, ...objectIds];
+  async findByAdmin(adminVenueIds: string[], page: number = 1, limit: number = 100): Promise<Reservation[]> {
+    const skip = (page - 1) * limit;
     return this.reservationModel
-      .find({ venueId: { $in: allPossible } })
+      .find({ venueId: { $in: adminVenueIds } })
       .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
       .exec();
   }
 
@@ -102,15 +104,13 @@ export class ReservationsService {
     limit: number = 10,
     search?: string
   ): Promise<{ reservations: Reservation[], pagination: { totalCount: number, totalPages: number, currentPage: number, limit: number } }> {
-    const objectIds = adminVenueIds.map((id) => new Types.ObjectId(id));
-    const allPossible = [...adminVenueIds, ...objectIds];
-
-    const query: any = { venueId: { $in: allPossible } };
+    const query: any = { venueId: { $in: adminVenueIds } };
     if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
       query.$or = [
-        { userName: { $regex: search, $options: 'i' } },
-        { userPhone: { $regex: search, $options: 'i' } },
-        { reservationNumber: { $regex: search, $options: 'i' } },
+        { userName: { $regex: escapedSearch, $options: 'i' } },
+        { userPhone: { $regex: escapedSearch, $options: 'i' } },
+        { reservationNumber: { $regex: escapedSearch, $options: 'i' } },
       ];
     }
 
@@ -122,6 +122,7 @@ export class ReservationsService {
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
+        .lean()
         .exec(),
       this.reservationModel.countDocuments(query).exec()
     ]);
@@ -142,9 +143,6 @@ export class ReservationsService {
     adminVenueIds: string[],
     period: '1m' | '3m' | '6m' | '1y',
   ): Promise<Reservation[]> {
-    const objectIds = adminVenueIds.map((id) => new Types.ObjectId(id));
-    const allPossible = [...adminVenueIds, ...objectIds];
-
     const now = new Date();
     const periodMap = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
     const months = periodMap[period] || 1;
@@ -152,16 +150,24 @@ export class ReservationsService {
 
     return this.reservationModel
       .find({
-        venueId: { $in: allPossible },
+        venueId: { $in: adminVenueIds },
         createdAt: { $gte: from },
       })
       .sort({ createdAt: -1 })
+      .lean()
       .exec();
   }
 
   /** Get all reservations — for single-venue admins we fetch all for their venue */
-  async findAll(): Promise<Reservation[]> {
-    return this.reservationModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(page: number = 1, limit: number = 100): Promise<Reservation[]> {
+    const skip = (page - 1) * limit;
+    return this.reservationModel
+      .find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
+      .exec();
   }
 
   /** Get reservations for a specific user (Flutter app) */
@@ -172,6 +178,7 @@ export class ReservationsService {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
+      .lean()
       .exec();
   }
 
@@ -214,7 +221,7 @@ export class ReservationsService {
   async checkIn(reservationNumber: string, venueId: string): Promise<Reservation> {
     const reservation = await this.reservationModel.findOne({
       reservationNumber,
-      venueId: { $in: [venueId, new (require('mongoose').Types.ObjectId)(venueId)] },
+      venueId,
       status: 'awaiting_arrival',
     }).exec();
 
@@ -238,32 +245,29 @@ export class ReservationsService {
 
   /** Get a single reservation by ID */
   async findOne(id: string): Promise<Reservation> {
-    const reservation = await this.reservationModel.findById(id).exec();
+    const reservation = await this.reservationModel.findById(id).lean().exec();
     if (!reservation) {
       throw new NotFoundException('Rezervasiya tapılmadı.');
     }
-    return reservation;
+    return reservation as any;
   }
 
   /** Auto-reject pending reservations older than 10 minutes */
   async autoRejectExpired(): Promise<number> {
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
-    const expiredReservations = await this.reservationModel
-      .find({
-        status: 'pending',
-        createdAt: { $lte: tenMinutesAgo },
-      })
-      .exec();
+    const result = await this.reservationModel.updateMany(
+      { status: 'pending', createdAt: { $lte: tenMinutesAgo } },
+      {
+        $set: {
+          status: 'rejected',
+          rejectReason:
+            'Məkan sahibi tərəfindən hər hansı cavab verilmədi. Məkana daxil olub məkan sahibiylə əlaqə saxlaya bilərsiniz.',
+        },
+      },
+    );
 
-    for (const reservation of expiredReservations) {
-      reservation.status = 'rejected';
-      reservation.rejectReason =
-        'Məkan sahibi tərəfindən hər hansı cavab verilmədi. Məkana daxil olub məkan sahibiylə əlaqə saxlaya bilərsiniz.';
-      await reservation.save();
-    }
-
-    return expiredReservations.length;
+    return result.modifiedCount;
   }
 
   /** Find awaiting_arrival reservations whose grace deadline has passed */
@@ -274,7 +278,7 @@ export class ReservationsService {
         status: 'awaiting_arrival',
         graceDeadline: { $lte: now },
       })
-      .exec();
+      .lean()
+      .exec() as any;
   }
 }
-

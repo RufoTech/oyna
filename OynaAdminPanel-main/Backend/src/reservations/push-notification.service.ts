@@ -1,30 +1,26 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   DeviceToken,
   DeviceTokenDocument,
 } from './schemas/device-token.schema';
-
-let admin: any = null;
-let fcmEnabled = false;
+import * as admin from 'firebase-admin';
+import * as path from 'path';
+import * as fs from 'fs';
 
 @Injectable()
 export class PushNotificationService implements OnModuleInit {
+  private readonly logger = new Logger(PushNotificationService.name);
+  private fcmEnabled = false;
+
   constructor(
     @InjectModel(DeviceToken.name)
     private deviceTokenModel: Model<DeviceTokenDocument>,
-  ) { }
+  ) {}
 
   onModuleInit() {
     try {
-      // Try to initialize Firebase Admin SDK
-      // It will look for GOOGLE_APPLICATION_CREDENTIALS env var
-      // or a serviceAccountKey.json file in the backend root
-      admin = require('firebase-admin');
-      const path = require('path');
-      const fs = require('fs');
-
       const keyPath = path.join(process.cwd(), 'serviceAccountKey.json');
 
       if (fs.existsSync(keyPath)) {
@@ -34,16 +30,15 @@ export class PushNotificationService implements OnModuleInit {
             credential: admin.credential.cert(serviceAccount),
           });
         }
-        fcmEnabled = true;
-        console.log('✅ Firebase Admin SDK initialized — FCM push enabled');
+        this.fcmEnabled = true;
+        this.logger.log('Firebase Admin SDK initialized — FCM push enabled');
       } else {
-        console.log('⚠️ serviceAccountKey.json not found in backend root.');
-        console.log('   FCM push notifications are DISABLED.');
-        console.log('   Download it from Firebase Console > Project Settings > Service Accounts');
-        console.log(`   and place it at: ${keyPath}`);
+        this.logger.warn(
+          `serviceAccountKey.json not found at: ${keyPath} — FCM push notifications DISABLED`,
+        );
       }
     } catch (error) {
-      console.error('Firebase Admin init error:', error.message);
+      this.logger.error(`Firebase Admin init error: ${error.message}`);
     }
   }
 
@@ -54,7 +49,6 @@ export class PushNotificationService implements OnModuleInit {
       { userId, fcmToken },
       { upsert: true, new: true },
     );
-    console.log(`FCM token registered for user ${userId}`);
   }
 
   /** Send a push notification to a specific user */
@@ -63,14 +57,12 @@ export class PushNotificationService implements OnModuleInit {
     title: string,
     body: string,
   ): Promise<void> {
-    if (!fcmEnabled || !admin) {
-      console.log(`FCM disabled — skipping push to user ${userId}`);
+    if (!this.fcmEnabled) {
       return;
     }
 
-    const tokenDoc = await this.deviceTokenModel.findOne({ userId });
+    const tokenDoc = await this.deviceTokenModel.findOne({ userId }).lean().exec();
     if (!tokenDoc) {
-      console.log(`No FCM token found for user ${userId}`);
       return;
     }
 
@@ -82,18 +74,17 @@ export class PushNotificationService implements OnModuleInit {
           body,
         },
         android: {
-          priority: 'high',
+          priority: 'high' as const,
           notification: {
-            priority: 'max',
+            priority: 'max' as const,
             defaultSound: true,
             defaultVibrateTimings: true,
             channelId: 'reservation_channel_id',
           },
         },
       });
-      console.log(`✅ FCM notification sent to user ${userId}`);
     } catch (error) {
-      console.error(`FCM send error for user ${userId}:`, error.message);
+      this.logger.error(`FCM send error for user ${userId}: ${error.message}`);
       if (
         error.code === 'messaging/invalid-registration-token' ||
         error.code === 'messaging/registration-token-not-registered'

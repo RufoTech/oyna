@@ -4,7 +4,7 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Inject, forwardRef } from '@nestjs/common';
+import { Inject, forwardRef, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { VenuesService } from '../venues/venues.service';
 
@@ -16,6 +16,8 @@ import { VenuesService } from '../venues/venues.service';
 export class ReservationsGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
+  private readonly logger = new Logger(ReservationsGateway.name);
+
   @WebSocketServer()
   server: Server;
 
@@ -39,38 +41,36 @@ export class ReservationsGateway
           for (const venue of venues) {
             const venueId = (venue as any)._id.toString();
             client.join(`venue_${venueId}`);
-            console.log(`Admin ${adminId} joined room: venue_${venueId}`);
           }
         } catch (err) {
-          console.error(`Failed to join venue rooms for admin ${adminId}:`, err.message);
+          this.logger.error(`Failed to join venue rooms for admin ${adminId}: ${err.message}`);
         }
       }
     }
 
     if (userId) {
       client.join(`user_${userId}`);
+      // Also join venue rooms the user might be viewing
+      const venueId = client.handshake.query.venueId as string;
+      if (venueId) {
+        client.join(`venue_${venueId}`);
+      }
     }
 
-    console.log(
-      `Client connected: ${client.id} | role: ${role} | userId: ${userId} | adminId: ${adminId}`,
-    );
+    this.logger.debug(`Client connected: ${client.id} | role: ${role}`);
   }
 
   handleDisconnect(client: Socket) {
-    console.log(`Client disconnected: ${client.id}`);
+    this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
   /** Notify only the admin of the specific venue about a new reservation */
   emitNewReservation(reservation: any) {
     const venueId = reservation.venueId?.toString();
     if (venueId) {
-      // Send to the specific venue's admin room
       this.server.to(`venue_${venueId}`).emit('newReservation', reservation);
-      console.log(`📢 Reservation notification sent to venue_${venueId} room`);
     } else {
-      // Fallback: if venueId is missing, broadcast to all admins (shouldn't happen)
       this.server.to('admins').emit('newReservation', reservation);
-      console.warn('⚠️ Reservation without venueId — broadcasting to all admins');
     }
   }
 
@@ -79,7 +79,6 @@ export class ReservationsGateway
     const venueId = reservation.venueId?.toString();
     if (venueId) {
       this.server.to(`venue_${venueId}`).emit('reservationCanceled', reservation);
-      console.log(`📢 Cancellation notification sent to venue_${venueId} room`);
     } else {
       this.server.to('admins').emit('reservationCanceled', reservation);
     }
@@ -92,9 +91,10 @@ export class ReservationsGateway
       .emit('reservationStatusUpdate', reservation);
   }
 
-  /** Broadcast venue status changes to ALL connected users in real-time */
+  /** Broadcast venue status changes to users viewing that venue */
   emitVenueUpdate(venue: any) {
-    this.server.emit('venueStatusUpdate', {
+    const venueId = venue._id?.toString();
+    this.server.to(`venue_${venueId}`).emit('venueStatusUpdate', {
       _id: venue._id,
       status: venue.status,
       temporarilyClosed: venue.temporarilyClosed ?? false,
@@ -102,9 +102,9 @@ export class ReservationsGateway
     });
   }
 
-  /** Broadcast venue layout (tables) updates to ALL connected users in real-time */
+  /** Broadcast venue layout (tables) updates to users viewing that venue */
   emitVenueLayoutUpdate(venueId: string, layout: any) {
-    this.server.emit('venueLayoutUpdate', {
+    this.server.to(`venue_${venueId}`).emit('venueLayoutUpdate', {
       venueId,
       layout,
     });
@@ -124,6 +124,5 @@ export class ReservationsGateway
     this.server.to(`venue_${venueId}`).emit('tablePendingReservation', payload);
     // Also broadcast to all admins as fallback
     this.server.to('admins').emit('tablePendingReservation', payload);
-    console.log(`📢 Table pending notification: ${tableId} in venue_${venueId}`);
   }
 }

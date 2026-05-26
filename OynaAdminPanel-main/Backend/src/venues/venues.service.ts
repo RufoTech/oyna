@@ -113,22 +113,24 @@ export class VenuesService {
   async findOne(id: string, adminId: string): Promise<Venue> {
     const venue = await this.venueModel
       .findOne({ _id: id, adminId: toObjectId(adminId) })
+      .lean()
       .exec();
     if (!venue) {
       throw new NotFoundException(`Məkan tapılmadı və ya icazəniz yoxdur.`);
     }
-    return venue;
+    return venue as any;
   }
 
   // ═══════════════════════════════════════════════
   // PUBLIC ENDPOINTS (Flutter App) — Redis Cached
   // ═══════════════════════════════════════════════
 
-  async findAllPublic(search?: string): Promise<Venue[]> {
+  async findAllPublic(search?: string, limit: number = 1000): Promise<Venue[]> {
     // Dinamik Axtarış varsa Redis-ə toxunmadan (Bypass) gətir
     if (search) {
       this.logger.debug(`🔍 Search query "${search}" → Direct DB query`);
-      const regex = new RegExp(search, 'i');
+      const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
+      const regex = new RegExp(escapedSearch, 'i');
       const results = await this.venueModel.find({
         status: { $in: ['ACTIVE', 'DRAFT', 'PUBLISHED', 'INACTIVE'] },
         $or: [
@@ -136,7 +138,11 @@ export class VenuesService {
           { category: regex },
           { 'location.address': regex },
         ],
-      }).select('-specs').lean().exec();
+      })
+      .select('-specs')
+      .limit(limit)
+      .lean()
+      .exec();
       return results.map(v => this.formatVenueWithBranch(v));
     }
 
@@ -152,7 +158,11 @@ export class VenuesService {
     this.logger.debug(`🔍 [CACHE MISS] ${cacheKey} → MongoDB query`);
     const venuesRaw = await this.venueModel.find({
       status: { $in: ['ACTIVE', 'DRAFT', 'PUBLISHED', 'INACTIVE'] },
-    }).select('-specs').lean().exec();
+    })
+    .select('-specs')
+    .limit(limit)
+    .lean()
+    .exec();
     const venues = venuesRaw.map(v => this.formatVenueWithBranch(v));
 
     // Redis-ə yaz
@@ -187,9 +197,12 @@ export class VenuesService {
 
   async findManyPublic(ids: string[]): Promise<Venue[]> {
     if (!ids || ids.length === 0) return [];
-    const idSet = new Set(ids);
-    const allVenues = await this.findAllPublic();
-    return allVenues.filter((v: any) => idSet.has(v._id.toString()));
+    const results = await this.venueModel
+      .find({ _id: { $in: ids } })
+      .select('-specs')
+      .lean()
+      .exec();
+    return results.map((v) => this.formatVenueWithBranch(v));
   }
 
   /**
@@ -218,7 +231,8 @@ export class VenuesService {
 
     // Add search filter if provided
     if (search) {
-      const regex = new RegExp(search, 'i');
+      const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
+      const regex = new RegExp(escapedSearch, 'i');
       match.$or = [
         { name: regex },
         { category: regex },
@@ -419,6 +433,16 @@ export class VenuesService {
 
   /** Get layout for public use (Flutter floor plan) — no admin auth required */
   async getPublicLayout(id: string): Promise<any> {
+    const cacheKey = CACHE_KEYS.DETAIL(id);
+    try {
+      const cached = await this.redisService.get<Venue>(cacheKey);
+      if (cached && cached.layout) {
+        return cached.layout;
+      }
+    } catch (err) {
+      // Ignore Redis error
+    }
+
     const venue = await this.venueModel
       .findById(id)
       .select('layout')
@@ -448,6 +472,12 @@ export class VenuesService {
       { _id: venueId, 'layout.items.id': tableId },
       { $set: { 'layout.items.$.status': tableStatus, 'layout.updatedAt': new Date() } },
     );
+
+    try {
+      await this.redisService.del(CACHE_KEYS.DETAIL(venueId));
+    } catch (err) {
+      // Ignore Redis error
+    }
 
     this.logger.debug(`🔄 Table ${tableId} status → ${tableStatus} (reservation: ${reservationStatus})`);
   }
@@ -492,10 +522,7 @@ export class VenuesService {
 
     const items: any[] = (venue as any).layout?.items || [];
     
-    // DEBUG: Log all items' tierId values to find the mismatch
-    const allTierIds = items.map(item => ({ name: item.name, tierId: item.tierId, status: item.status, type: item.type }));
-    this.logger.debug(`🔍 findRandomAvailableTable called with tierId="${tierId}", tierTitle="${tierTitle}"`);
-    this.logger.debug(`🔍 All layout items: ${JSON.stringify(allTierIds)}`);
+    this.logger.debug(`findRandomAvailableTable called with tierId="${tierId}", tierTitle="${tierTitle}"`);
 
     const matchesTier = (itemTierId: string) => {
       if (!itemTierId) return false;
@@ -510,8 +537,6 @@ export class VenuesService {
     const availables = items.filter(
       (item) => matchesTier(item.tierId) && item.status === 'available',
     );
-
-    this.logger.debug(`🔍 Available matches: ${availables.length}`);
 
     if (availables.length === 0) return null;
 

@@ -65,3 +65,12 @@ export class Reservation {
 }
 
 export const ReservationSchema = SchemaFactory.createForClass(Reservation);
+
+// ── Performance Indexes ──
+ReservationSchema.index({ venueId: 1 });
+ReservationSchema.index({ userId: 1, status: 1 });
+ReservationSchema.index({ venueId: 1, createdAt: -1 });
+ReservationSchema.index({ venueId: 1, status: 1 });
+ReservationSchema.index({ status: 1, createdAt: 1 });
+ReservationSchema.index({ status: 1, graceDeadline: 1 });
+ReservationSchema.index({ reservationNumber: 1 });

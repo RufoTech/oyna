@@ -25,3 +25,5 @@ export class Food {
 }
 
 export const FoodSchema = SchemaFactory.createForClass(Food);
+
+FoodSchema.index({ adminId: 1 });

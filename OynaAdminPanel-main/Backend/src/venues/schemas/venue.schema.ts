@@ -223,5 +223,7 @@ export class Venue {
 
 export const VenueSchema = SchemaFactory.createForClass(Venue);
 
-// Creates geospatial 2dsphere index for nearby searching via map
+// ── Performance Indexes ──
 VenueSchema.index({ 'location.coordinates': '2dsphere' });
+VenueSchema.index({ adminId: 1 });
+VenueSchema.index({ status: 1 });

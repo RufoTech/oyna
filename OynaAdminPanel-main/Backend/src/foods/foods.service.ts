@@ -51,22 +51,24 @@ export class FoodsService {
     const foods = await this.foodModel
       .find({ adminId: toObjectId(adminId) })
       .sort({ createdAt: -1 })
+      .lean()
       .exec();
 
     // 3. Redis-ə yaz
     await this.redisService.set(cacheKey, foods, CACHE_TTL.LIST);
 
-    return foods;
+    return foods as any;
   }
 
   async findOne(id: string, adminId: string): Promise<Food> {
     const food = await this.foodModel
       .findOne({ _id: id, adminId: toObjectId(adminId) })
+      .lean()
       .exec();
     if (!food) {
       throw new NotFoundException('Food tapilmadi.');
     }
-    return food;
+    return food as any;
   }
 
   async update(

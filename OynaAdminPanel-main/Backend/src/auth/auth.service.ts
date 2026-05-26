@@ -31,17 +31,17 @@ export class AuthService implements OnModuleInit {
       .exec();
 
     if (!superAdmin) {
-      const passwordHash = await bcrypt.hash('superadmin123', 10);
+      const adminEmail = process.env.SUPER_ADMIN_EMAIL || 'superadmin@oyna.com';
+      const adminPassword = process.env.SUPER_ADMIN_PASSWORD || 'superadmin123';
+      const passwordHash = await bcrypt.hash(adminPassword, 10);
       await this.userModel.create({
-        email: 'superadmin@oyna.com',
+        email: adminEmail,
         passwordHash,
         displayName: 'Super Admin',
         role: 'SUPER_ADMIN',
         status: 'ACTIVE',
       });
-      this.logger.log(
-        'Default super admin yaradildi: superadmin@oyna.com / superadmin123',
-      );
+      this.logger.log('Default super admin created');
     }
   }
 

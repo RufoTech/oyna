@@ -1,6 +1,5 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import { ReservationsService } from './reservations.service';
 import { ReservationsGateway } from './reservations.gateway';
 import { PushNotificationService } from './push-notification.service';
 import { VenuesService } from '../venues/venues.service';
@@ -13,8 +12,9 @@ import {
 
 @Injectable()
 export class AutoRejectTask {
+  private readonly logger = new Logger(AutoRejectTask.name);
+
   constructor(
-    private readonly reservationsService: ReservationsService,
     private readonly reservationsGateway: ReservationsGateway,
     private readonly pushNotificationService: PushNotificationService,
     @Inject(forwardRef(() => VenuesService))
@@ -26,95 +26,102 @@ export class AutoRejectTask {
   /** Runs every 30 seconds — checks and auto-rejects expired pending reservations */
   @Interval(30_000)
   async handleAutoReject() {
-    // Existing logic for pending reservations
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-    const expiredReservations = await this.reservationModel
-      .find({
-        status: 'pending',
-        createdAt: { $lte: tenMinutesAgo },
-      })
-      .exec();
+    const now = new Date();
 
-    for (const reservation of expiredReservations) {
-      const rejectReason =
-        'Məkan sahibi tərəfindən hər hansı cavab verilmədi. Məkana daxil olub məkan sahibiylə əlaqə saxlaya bilərsiniz.';
+    // 1. Fetch both expired types in parallel
+    const [expiredPending, expiredAwaiting] = await Promise.all([
+      this.reservationModel
+        .find({ status: 'pending', createdAt: { $lte: tenMinutesAgo } })
+        .lean()
+        .exec(),
+      this.reservationModel
+        .find({ status: 'awaiting_arrival', graceDeadline: { $lte: now } })
+        .lean()
+        .exec(),
+    ]);
 
-      reservation.status = 'rejected';
-      reservation.rejectReason = rejectReason;
-      await reservation.save();
+    if (expiredPending.length === 0 && expiredAwaiting.length === 0) return;
 
-      // Clear the table from the simulation view map
-      if (reservation.venueId && reservation.tableId) {
-        const venueId = reservation.venueId.toString();
-        await this.venuesService.syncTableStatus(venueId, reservation.tableId, 'rejected');
-        const updatedLayout = await this.venuesService.getPublicLayout(venueId);
-        this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
-      }
+    const pendingRejectReason =
+      'Məkan sahibi tərəfindən hər hansı cavab verilmədi. Məkana daxil olub məkan sahibiylə əlaqə saxlaya bilərsiniz.';
+    const awaitingRejectReason =
+      'Vaxtında gəlmədiyiniz üçün ləğv olundu';
 
-      // Notify user via Socket.io
-      this.reservationsGateway.emitStatusUpdate(
-        reservation.userId,
-        reservation,
-      );
+    // 2. Bulk update — single MongoDB operation per status type
+    const bulkOps: Promise<any>[] = [];
 
-      // Notify user via FCM push (even if app is killed)
-      this.pushNotificationService.sendToUser(
-        reservation.userId,
-        '❌ Rezervasiya İmtina Edildi',
-        `${reservation.venueName} — ${rejectReason}`,
-      );
-
-      // Notify admin panel to refresh
-      this.reservationsGateway.emitReservationCanceled(reservation);
-
-      console.log(
-        `Auto-rejected pending reservation ${(reservation as any)._id} for user ${reservation.userId}`,
+    if (expiredPending.length > 0) {
+      const pendingIds = expiredPending.map((r) => r._id);
+      bulkOps.push(
+        this.reservationModel.updateMany(
+          { _id: { $in: pendingIds } },
+          { $set: { status: 'rejected', rejectReason: pendingRejectReason } },
+        ),
       );
     }
 
-    // NEW logic for no_show reservations (grace period expired)
-    const now = new Date();
-    const expiredAwaiting = await this.reservationModel
-      .find({
-        status: 'awaiting_arrival',
-        graceDeadline: { $lte: now },
-      })
-      .exec();
+    if (expiredAwaiting.length > 0) {
+      const awaitingIds = expiredAwaiting.map((r) => r._id);
+      bulkOps.push(
+        this.reservationModel.updateMany(
+          { _id: { $in: awaitingIds } },
+          { $set: { status: 'no_show', rejectReason: awaitingRejectReason } },
+        ),
+      );
+    }
 
-    for (const reservation of expiredAwaiting) {
-      const rejectReason = 'Vaxtında gəlmədiyiniz üçün ləğv olundu'; // Required by user
+    await Promise.all(bulkOps);
 
-      reservation.status = 'no_show';
-      reservation.rejectReason = rejectReason;
-      await reservation.save();
+    // 3. Group by venue for batch table status sync
+    const allExpired = [
+      ...expiredPending.map((r) => ({ ...r, newStatus: 'rejected' })),
+      ...expiredAwaiting.map((r) => ({ ...r, newStatus: 'no_show' })),
+    ];
 
-      // Clear the table from the simulation view map
-      if (reservation.venueId && reservation.tableId) {
-        const venueId = reservation.venueId.toString();
-        await this.venuesService.syncTableStatus(venueId, reservation.tableId, 'no_show');
-        const updatedLayout = await this.venuesService.getPublicLayout(venueId);
-        this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
+    const venueTableMap = new Map<string, Set<string>>();
+    for (const r of allExpired) {
+      if (!r.venueId || !r.tableId) continue;
+      const vId = r.venueId.toString();
+      if (!venueTableMap.has(vId)) venueTableMap.set(vId, new Set());
+      venueTableMap.get(vId)!.add(r.tableId);
+    }
+
+    // Sync table statuses and emit layout updates per venue (not per reservation)
+    for (const [venueId, tableIds] of venueTableMap) {
+      for (const tableId of tableIds) {
+        await this.venuesService.syncTableStatus(venueId, tableId, 'rejected');
       }
+      const updatedLayout = await this.venuesService.getPublicLayout(venueId);
+      this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
+    }
 
-      // Notify user via Socket.io
-      this.reservationsGateway.emitStatusUpdate(
-        reservation.userId,
-        reservation,
-      );
+    // 4. Send notifications in parallel (fire-and-forget with error handling)
+    const notifications = allExpired.map((r) => {
+      const title = r.newStatus === 'rejected'
+        ? '❌ Rezervasiya İmtina Edildi'
+        : '⏰ Rezervasiya Ləğv Olundu';
+      const reason = r.newStatus === 'rejected' ? pendingRejectReason : awaitingRejectReason;
 
-      // Notify user via FCM push
-      this.pushNotificationService.sendToUser(
-        reservation.userId,
-        '⏰ Rezervasiya Ləğv Olundu',
-        `${reservation.venueName} — ${rejectReason}`,
-      );
+      // Emit WebSocket updates
+      this.reservationsGateway.emitStatusUpdate(r.userId, r);
+      this.reservationsGateway.emitReservationCanceled(r);
 
-      // Notify admin panel to refresh
-      this.reservationsGateway.emitReservationCanceled(reservation);
+      // Send FCM push
+      return this.pushNotificationService
+        .sendToUser(r.userId, title, `${r.venueName} — ${reason}`)
+        .catch((err) =>
+          this.logger.error(`Push failed for user ${r.userId}: ${err.message}`),
+        );
+    });
 
-      console.log(
-        `Auto-no_show reservation ${(reservation as any)._id} for user ${reservation.userId}`,
-      );
+    await Promise.allSettled(notifications);
+
+    if (expiredPending.length > 0) {
+      this.logger.log(`Auto-rejected ${expiredPending.length} pending reservation(s)`);
+    }
+    if (expiredAwaiting.length > 0) {
+      this.logger.log(`Auto-no_show ${expiredAwaiting.length} awaiting reservation(s)`);
     }
   }
 }
