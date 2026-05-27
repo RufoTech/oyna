@@ -4,6 +4,35 @@ Bu sənəd tətbiqin sürətini, FPS-ini və resurs (batareya/yaddaş) istifadə
 
 ---
 
+## 📊 Ümumi Performans İcmalı və Xülasə Cədvəli
+
+Kod bazasında aparılan dərin analiz nəticəsində **20 vacib performans və kod keyfiyyəti problemi** müəyyən edilmişdir. Tapılan bütün problemlər, onun ciddilik dərəcəsi və optimallaşdırma sahələri aşağıdakı cədvəldə ümumiləşdirilmişdir:
+
+| ID | Status | Problem Sahəsi | Fayl / Widget | Optimallaşdırma Növü |
+| :--- | :---: | :--- | :--- | :--- |
+| **1** | 🔴 Kritik | `FutureBuilder` re-triggering (Auth disk I/O) | `lib/app.dart` | Asinxron Gecikmə |
+| **2** | 🔴 Kritik | Xəritə markerlərində `BackdropFilter` | `lib/features/home/.../map_background.dart` | GPU Yüklənməsi / FPS |
+| **3** | 🔴 Kritik | Drag zamanı xəritə və detalların lazımsız rebuildi | `lib/features/home/.../home_screen.dart` | Render / FPS |
+| **4** | 🔴 Kritik | Eyni anda iki xəritə instansiyasının aktiv olması | `lib/features/search/.../venue_map_section.dart` | Yaddaş (RAM) |
+| **5** | 🟡 Orta | `IndexedStack` arxasında taymerlərin boşa işləməsi | `lib/features/search/.../search_screen.dart` | Batareya / Background CPU |
+| **6** | 🟡 Orta | Dio Interceptor daxilində asinxron disk I/O | `lib/core/network/dio_client.dart` | Sorğu Gecikməsi |
+| **7** | 🟡 Orta | Sürüşdürmə zamanı ağır coğrafi hesablamalar | `lib/features/search/.../search_screen.dart` | Prosessor (CPU) Yükü |
+| **8** | 🟡 Orta | `FloorPlanViewer` redundant rebuilds (List `!=`) | `lib/features/search/.../floor_plan_viewer.dart` | Lazımsız Render |
+| **9** | 🟡 Orta | Siyahılarda virtualizasiyanın (Lazy Loading) olmaması | `lib/features/favorites/.../favorites_screen.dart`| Yaddaş (RAM) |
+| **10** | 🟡 Orta | `getCurrentPosition()` tez-tez çağırılması | `lib/core/providers/location_provider.dart` | Batareya / Gecikmə |
+| **11** | 🔴 Kritik | BottomNavigationBar-də GlassPanel (BackdropFilter) | `lib/features/home/.../bottom_nav_bar.dart:72` | GPU / Batareya |
+| **12** | 🔴 Kritik | OnboardingScreen-də iki nəhəng BackdropFilter (120/100)| `lib/features/onboarding/.../onboarding_screen.dart` | GPU / Cihaz Qızması |
+| **13** | 🔴 Kritik | ReservationScreen-də 1 saniyəlik Timer | `lib/features/search/.../reservation_screen.dart:95` | Batareya / CPU Yükü |
+| **14** | 🔴 Kritik | `CachedNetworkImage`-də keş ölçülərinin olmaması | `lib/features/home/.../venue_card.dart` | Yaddaş (RAM) Sızması |
+| **15** | 🟡 Orta | `BuildContext`-in asinxron boşluqlarda istifadəsi | Səhifələrdəki asinxron metodlar (`login`, `res`) | Sabitlik / Crash Prevention |
+| **16** | 🟡 Orta | Köhnəlmiş (Deprecated) API-lərin istifadəsi | `location_provider.dart`, `otp_screen.dart` | Gələcək Uyğunluq |
+| **17** | 🟡 Orta | Siyahılarda və tablarda `KeepAlive` mixin-in olmaması | `favorites_screen.dart`, `search_screen.dart` | RAM / Scroll Keşləmə |
+| **18** | 🟡 Orta | OnboardingScreen-in 38KB monolit strukturda olması | `onboarding_screen.dart` | Tree-shaking / Oxunurluq |
+| **19** | 🟡 Orta | `MediaQuery.of` hər frame-də tam rebuild etməsi | Müxtəlif widget və ekran build metodları | Mikro-optimallaşdırma |
+| **20** | 🟢 Yüngül | Shimmer keşləmə, lokal şriftlər və const constructor | Bütün layihə boyunca | Ümumi Sürət (Quick Wins) |
+
+---
+
 ## 1. Kritik Performans Problemləri (Critical Bottlenecks)
 
 ### 🔴 1. FutureBuilder re-triggering (I/O və Auth Gecikmələri)
@@ -67,6 +96,84 @@ Bu sənəd tətbiqin sürətini, FPS-ini və resurs (batareya/yaddaş) istifadə
   İstifadəçi bir məkanın detallarına baxanda, arxa fondakı əsas kəşf xəritəsi (`MapBackground`) yaddaşda qalmağa davam edir. Eyni zamanda detallar bölməsində ünvanı göstərən daha bir `FlutterMap` işə salınır. Birdən çox interaktiv xəritə instansiyasının eyni vaxtda işləməsi yaddaşı (RAM) ikiqat doldurur və zəif cihazlarda çökmələrə (Out of Memory) yol aça bilər.
 * **Həlli:** 
   Detal səhifəsindəki kiçik xəritəni interaktiv etmək əvəzinə, statik bir şəkil (məsələn, Mapbox Static Images API vasitəsilə) kimi göstərin. İstifadəçi üstünə tıkladıqda xarici Google Maps/Apple Maps proqramını və ya ayrıca interaktiv tam ekran xəritəni açın.
+
+---
+
+### 🔴 11. BottomNavigationBar-də GlassPanel (BackdropFilter) — Daimi GPU Yükü
+* **Yerləşdiyi fayl:** [lib/features/home/presentation/widgets/bottom_nav_bar.dart:72](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/home/presentation/widgets/bottom_nav_bar.dart#L72)
+* **Problem:** 
+  Alt naviqasiya paneli hər zaman `GlassPanel(blurSigma: 30)` ilə örtülmüşdür. NavBar tətbiq daxilində 4 tabda da daim ekrandadır və istifadəçi heç bir şey etməsə belə, GPU hər frame-də (saniyədə 60-120 dəfə) naviqasiya panelinin arxasındakı fonu kəsib bulandırmağa (blur) davam edir. Bu, daimi GPU rendering yükü yaradır, cihazı qızdırır və batareyanı sürətlə tükədir.
+* **Həlli:** 
+  `GlassPanel`-i ləğv edib, sadə `Container` və `BoxDecoration` vasitəsilə yarımşəffaf fon istifadə edin:
+  ```dart
+  Container(
+    decoration: BoxDecoration(
+      color: AppColors.surface.withOpacity(0.92), // Sürətli rendering
+      borderRadius: BorderRadius.circular(100),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 32,
+          spreadRadius: 2,
+        ),
+      ],
+    ),
+    child: ...,
+  )
+  ```
+
+---
+
+### 🔴 12. OnboardingScreen-də İki Nəhəng BackdropFilter (sigma 120 və 100)
+* **Yerləşdiyi fayl:** [lib/features/onboarding/presentation/screens/onboarding_screen.dart:81, 94](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/onboarding/presentation/screens/onboarding_screen.dart#L81)
+* **Problem:** 
+  Onboarding ekranında arxa fondakı dekorativ yumşaq işıq (glow) effekti yaratmaq üçün 500x500 və 400x400 ölçülü nəhəng konteynerlərdə `.blurred(sigma: 120)` və `.blurred(sigma: 100)` (BackdropFilter) çağırılır. Çox böyük sahədə bu dərəcədə yüksək blur tətbiq edilməsi aşağı və orta səviyyəli cihazlarda onboarding ekranı açılan kimi ciddi şəkildə kadr düşməsinə (FPS drop) və ya donmalara (ANR) səbəb olur.
+* **Həlli:** 
+  Ağır GPU bluru əvəzinə eyni vizual effekti sıfır GPU yükü ilə verən statik radial gradient (`RadialGradient`) istifadə edin:
+  ```dart
+  Container(
+    width: 500,
+    height: 500,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      gradient: RadialGradient(
+        colors: [
+          AppColors.onSurface.withOpacity(0.03),
+          Colors.transparent,
+        ],
+      ),
+    ),
+  )
+  ```
+
+---
+
+### 🔴 13. ReservationScreen-də 1 Saniyəlik Timer — Güclü Batareya Sərfiyyatı
+* **Yerləşdiyi fayl:** [lib/features/search/presentation/screens/reservation_screen.dart:95](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/search/presentation/screens/reservation_screen.dart#L95)
+* **Problem:** 
+  Rezervasiya ekranında `Timer.periodic(const Duration(seconds: 1), ...)` hər saniyə işləyərək `isOpenByClock` yoxlanışını aparır və widget-in vəziyyətini yeniləyir (`setState`). `isOpenByClock` metodu isə hər dəfə asinxron vaxtı oxuyur və string parsing əməliyyatları icra edir. Hər saniyə bu ağır yoxlanışın aparılması prosessoru (CPU) məşğul saxlayır və güclü batareya sərfiyyatına yol açır.
+* **Həlli:** 
+  * Periodik timer intervalını ən azı 30 və ya 60 saniyəyə qaldırın.
+  * Ən yaxşı variant: Məkanın bağlanma vaxtını bir dəfə hesablayıb, həmin vaxta uyğun tək bir birdəfəlik Timer (one-shot timer) qurmaqdır.
+
+---
+
+### 🔴 14. CachedNetworkImage-də memCacheWidth və memCacheHeight Parametrlərinin Olmaması (Yaddaş/RAM Sızması)
+* **Yerləşdiyi fayllar:** 
+  * [lib/features/home/presentation/widgets/venue_card.dart#L80](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/home/presentation/widgets/venue_card.dart#L80)
+  * [lib/features/search/presentation/widgets/search_result_card.dart#L72](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/search/presentation/widgets/search_result_card.dart#L72)
+* **Problem:** 
+  Məkan şəkilləri şəbəkədən `CachedNetworkImage` vasitəsilə yüklənir. Şəkillərin ölçüsü çox böyük (məsələn, 2K-4K, 4MB) ola bilər. `memCacheWidth` və `memCacheHeight` limitləri təyin edilmədiyinə görə, Flutter bu böyük şəkilləri tam ölçüdə RAM-da decode edir və saxlayır. Kiçik bir widget daxilində (məsələn, 96x96 ölçülü kiçik avatar) 4K şəklin render olunması yaddaşı (RAM) sürətlə doldurur və tətbiqin çökməsinə (Out of Memory) gətirib çıxarır.
+* **Həlli:** 
+  Şəkillərin RAM-da yalnız göstəriləcəyi vizual ölçüdə decode olunması üçün cache limitlərini qeyd edin:
+  ```dart
+  CachedNetworkImage(
+    imageUrl: imageUrl,
+    memCacheWidth: 200,  // Ekran piksel sıxlığı nəzərə alınaraq
+    memCacheHeight: 200,
+    fit: BoxFit.cover,
+  )
+  ```
 
 ---
 
@@ -141,6 +248,37 @@ Bu sənəd tətbiqin sürətini, FPS-ini və resurs (batareya/yaddaş) istifadə
 
 ---
 
+### 🟡 15. Siyahılarda və Tablarda KeepAlive (AutomaticKeepAliveClientMixin) Olmaması
+* **Yerləşdiyi fayllar:** 
+  * [lib/features/favorites/presentation/screens/favorites_screen.dart](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/favorites/presentation/screens/favorites_screen.dart)
+  * [lib/features/search/presentation/screens/search_screen.dart](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/search/presentation/screens/search_screen.dart)
+* **Problem:** 
+  Siyahı elementləri ekrandan çıxanda (scroll) və ya istifadəçi tablar arasında keçid edəndə mövcud ekranın render vəziyyəti (scroll mövqeyi, yüklənmiş kart state-ləri) yaddaşdan tamamilə silinir. Yenidən qayıtdıqda ekran sıfırdan yüklənir. Bu, RAM yaddaşını təmizləsə də, UI səviyyəsində hər dəfə mikro-donmalara (jank) və pis istifadəçi təcrübəsinə (bütün scroll mövqelərinin itməsi) səbəb olur.
+* **Həlli:** 
+  Ekranların state siniflərinə `AutomaticKeepAliveClientMixin` əlavə edin və `wantKeepAlive => true` qaytarın. Bu sayədə tab dəyişəndə və ya sürüşdürəndə mövcud scroll mövqeyi qorunub saxlanacaq.
+
+---
+
+### 🟡 16. OnboardingScreen-in 38KB-lıq Nəhəng Monolit Strukturda Olması
+* **Yerləşdiyi fayl:** [lib/features/onboarding/presentation/screens/onboarding_screen.dart](file:///c:/Users/ASUS/Desktop/OynaBeta/oyna/Flutter-CD-main/lib/features/onboarding/presentation/screens/onboarding_screen.dart)
+* **Problem:** 
+  `onboarding_screen.dart` faylı 900+ sətirdən ibarətdir və bütün onboarding məntiqini, step widget-lərini, animasiyaları və xüsusi dizayn elementlərini özündə birləşdirən nəhəng bir monolitdir. Bu struktur tree-shaking optimallaşdırmasını çətinləşdirir və kodun maintainable olmasını pisləşdirir.
+* **Həlli:** 
+  Addım widget-lərini (`_buildStepOne`, `_buildStepTwo`, `_buildStepThree`) və köməkçi özəl komponentləri (`_CustomPin`, `_PulseDot`) müstəqil alt fayllara çıxarın.
+
+---
+
+### 🟡 17. MediaQuery.of(context) ilə Bütün Səhifənin Lazımsız Rebuild Olması
+* **Problem:** 
+  Dizaynda yalnız ekranın ölçüsünü və ya padding boşluqlarını öyrənmək üçün birbaşa `MediaQuery.of(context)` çağırılır. Bu çağırış widget-i MediaQuery obyektinin bütün xüsusiyyətlərinə (məsələn, klaviatura açılanda ekran ölçüsünün dəyişməsi, safe area yenilənmələri) abunə edir. Nəticədə tamamilə əlaqəsiz hər hansı bir sistem dəyişikliyində bütün səhifə yenidən build olunur.
+* **Həlli:** 
+  Flutter 3.10+ versiyalarından başlayaraq yalnız lazım olan dəyərlərə spesifik abunə olun:
+  - Ekran ölçüsü üçün: `MediaQuery.sizeOf(context)`
+  - Padding / Safe area üçün: `MediaQuery.paddingOf(context)`
+  - Platform parlaqlığı üçün: `MediaQuery.platformBrightnessOf(context)`
+
+---
+
 ## 3. Statik Analiz (Lints) və Kod Keyfiyyəti (Static Analysis Report)
 
 `flutter analyze` əmrinin icrası nəticəsində tapılan **63 problemin** vacib hissələri:
@@ -175,3 +313,5 @@ Bu sənəd tətbiqin sürətini, FPS-ini və resurs (batareya/yaddaş) istifadə
    Məkan məlumatları (venues) asanlıqla dəyişən məlumatlar deyil. `dio_cache_interceptor` paketini əlavə etməklə backend sorğularını keşləmək olar. Bu, həm tətbiqi sürətləndirər, həm də backend yüklənməsini azaldar.
 3. **Const Konstruktorların Çatışmazlığı:**
    Dəyişməz widget-lər `const` konstruktoru ilə çağırılmalıdır. Hər build zamanı bu obyektlərin yenidən yaranmaması üçün başlarına `const` artırmaq olduqca vacibdir.
+4. **Shimmer Animasiyalarının Keşlənməsi:**
+   Tətbiqdə skelet yüklənmə (Shimmer) effekti verən elementləri təkrar render etməmək üçün static caching tətbiq edin.

@@ -10,16 +10,24 @@ import '../../providers/favorites_provider.dart';
 import '../../../search/presentation/screens/venue_detail_screen.dart';
 import '../../../search/presentation/widgets/search_result_card.dart';
 import '../../../search/presentation/widgets/search_result_skeleton.dart';
-import '../../../../core/providers/location_provider.dart';
 
 final _favoriteSearchQueryProvider = StateProvider.autoDispose<String>((ref) => '');
 
 /// The user's favorites collection screen – now using unified SearchResultCard design.
-class FavoritesScreen extends ConsumerWidget {
+class FavoritesScreen extends ConsumerStatefulWidget {
   const FavoritesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FavoritesScreen> createState() => _FavoritesScreenState();
+}
+
+class _FavoritesScreenState extends ConsumerState<FavoritesScreen> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
     final favState = ref.watch(favoritesProvider);
     final venuesState = ref.watch(venuesProvider);
 
@@ -29,32 +37,32 @@ class FavoritesScreen extends ConsumerWidget {
         slivers: [
           SliverToBoxAdapter(
             child: SizedBox(
-              height: MediaQuery.of(context).padding.top + 24,
+              height: MediaQuery.paddingOf(context).top + 24,
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                // Editorial Header
-                const _HeaderSection(),
-                const SizedBox(height: 48),
-
-                // Dynamic Content
-                _buildBody(context, ref, favState, venuesState),
-
-                const SizedBox(height: 120), // Bottom padding for Nav Bar
-              ]),
+          const SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _HeaderSection(),
+                  SizedBox(height: 48),
+                ],
+              ),
             ),
+          ),
+          ..._buildBodySlivers(context, favState, venuesState),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 120), // Bottom padding for Nav Bar
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBody(
+  List<Widget> _buildBodySlivers(
     BuildContext context,
-    WidgetRef ref,
     AsyncValue<Set<String>> favState,
     AsyncValue<List<Venue>> venuesState,
   ) {
@@ -62,23 +70,32 @@ class FavoritesScreen extends ConsumerWidget {
 
     // Loading state
     if (favState.isLoading || venuesState.isLoading) {
-      return Column(
-        children: List.generate(
-          3,
-          (index) => const Padding(
-            padding: EdgeInsets.only(bottom: 24),
-            child: SearchResultSkeleton(),
+      return [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => const Padding(
+                padding: EdgeInsets.only(bottom: 24),
+                child: SearchResultSkeleton(),
+              ),
+              childCount: 3,
+            ),
           ),
         ),
-      );
+      ];
     }
 
     // Error state
     if (favState.hasError) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 80),
-        child: Center(child: Text('${l10n.errorOccurred}: ${favState.error}')),
-      );
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 80),
+            child: Center(child: Text('${l10n.errorOccurred}: ${favState.error}')),
+          ),
+        ),
+      ];
     }
 
     final favoriteIds = favState.valueOrNull ?? {};
@@ -98,88 +115,101 @@ class FavoritesScreen extends ConsumerWidget {
 
     // Empty state
     if (favoriteVenues.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 60),
-        child: Column(
-          children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceContainerLow,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.favorite_border,
-                size: 48,
-                color: AppColors.onSurfaceVariant,
-              ),
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 60),
+            child: Column(
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceContainerLow,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.favorite_border,
+                    size: 48,
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  l10n.noFavoritesYet,
+                  style: AppTypography.headlineMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 20,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.noFavoritesDescription,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: AppColors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            Text(
-              l10n.noFavoritesYet,
-              style: AppTypography.headlineMedium.copyWith(
-                fontWeight: FontWeight.w700,
-                fontSize: 20,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.noFavoritesDescription,
-              textAlign: TextAlign.center,
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.onSurfaceVariant,
-              ),
-            ),
-          ],
+          ),
         ),
-      );
+      ];
     }
 
-    // Favorites list using SearchResultCard
-    return Column(
-      children: favoriteVenues.map((venue) {
-        final heroUrl = venue.media?.heroImage?.url ?? '';
-        final city = venue.location?.city ?? '';
-        final address = venue.location?.address ?? '';
-        final fullAddress = city.isNotEmpty && address.isNotEmpty
-            ? '$city, $address'
-            : city.isNotEmpty
-                ? city
-                : address;
-        final basePrice = venue.pricing?.basePrice ?? 0;
+    // Favorites list using SearchResultCard with virtualization (SliverList.builder)
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final venue = favoriteVenues[index];
+              final heroUrl = venue.media?.heroImage?.url ?? '';
+              final city = venue.location?.city ?? '';
+              final address = venue.location?.address ?? '';
+              final fullAddress = city.isNotEmpty && address.isNotEmpty
+                  ? '$city, $address'
+                  : city.isNotEmpty
+                      ? city
+                      : address;
+              final basePrice = venue.pricing?.basePrice ?? 0;
 
-        final isOpen = (venue.status == 'ACTIVE' || venue.status == 'PUBLISHED' || venue.status == 'INACTIVE') && 
-                       !(venue.temporarilyClosed) && 
-                       venue.isOpenByClock;
-        
-        const String distanceText = '';
+              final isOpen = (venue.status == 'ACTIVE' || venue.status == 'PUBLISHED' || venue.status == 'INACTIVE') && 
+                             !(venue.temporarilyClosed) && 
+                             venue.isOpenByClock;
+              
+              const String distanceText = '';
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 24),
-          child: SearchResultCard(
-            venueId: venue.id,
-            imageUrl: heroUrl,
-            title: venue.name ?? l10n.venue,
-            subtitle: venue.category ?? l10n.gameRoom,
-            address: fullAddress.isNotEmpty ? fullAddress : 'Bakı',
-            price: '${basePrice.toStringAsFixed(0)} AZN',
-            distance: distanceText,
-            availabilityText: isOpen ? l10n.openNow : l10n.venueClosed,
-            isOpenNow: isOpen,
-            isTemporarilyClosed: venue.temporarilyClosed,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => VenueDetailScreen(venue: venue),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: SearchResultCard(
+                  venueId: venue.id,
+                  imageUrl: heroUrl,
+                  title: venue.name ?? l10n.venue,
+                  subtitle: venue.category ?? l10n.gameRoom,
+                  address: fullAddress.isNotEmpty ? fullAddress : 'Bakı',
+                  price: '${basePrice.toStringAsFixed(0)} AZN',
+                  distance: distanceText,
+                  availabilityText: isOpen ? l10n.openNow : l10n.venueClosed,
+                  isOpenNow: isOpen,
+                  isTemporarilyClosed: venue.temporarilyClosed,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => VenueDetailScreen(venue: venue),
+                      ),
+                    );
+                  },
                 ),
               );
             },
+            childCount: favoriteVenues.length,
           ),
-        );
-      }).toList(),
-    );
+        ),
+      ),
+    ];
   }
 }
 

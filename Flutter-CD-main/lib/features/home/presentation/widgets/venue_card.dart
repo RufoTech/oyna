@@ -7,7 +7,7 @@ import '../../../../core/models/venue_model.dart';
 import '../../../../core/constants/app_config.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/widgets/glass_panel.dart';
+
 
 /// Floating venue detail card shown at the bottom of the map.
 /// Now accepts dynamic [Venue] data from backend.
@@ -36,20 +36,21 @@ class VenueCard extends StatelessWidget {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 448),
-        child: GlassPanel(
-          borderRadius: BorderRadius.circular(32),
-          backgroundOpacity: 0.92,
-          blurSigma: 25,
-          border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withValues(alpha: 0.1),
-              blurRadius: 32,
-              spreadRadius: 2,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.15),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.1),
+                blurRadius: 32,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
           padding: const EdgeInsets.all(16),
           child: GestureDetector(
             onVerticalDragUpdate: onDragUpdate,
@@ -81,6 +82,8 @@ class VenueCard extends StatelessWidget {
                               imageUrl: heroUrl,
                               width: 96,
                               height: 96,
+                              memCacheWidth: 250,
+                              memCacheHeight: 250,
                               fit: BoxFit.cover,
                               placeholder: (context, url) => Container(
                                 width: 96,
@@ -134,40 +137,38 @@ class VenueCard extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                              Container(
-                                child: Column(
-                                  children: [
-                                    if (venue?.temporarilyClosed ?? false)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        margin: const EdgeInsets.only(bottom: 8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red.shade600,
-                                          borderRadius: BorderRadius.circular(4),
-                                        ),
-                                        child: Text(
-                                          AppLocalizations.of(context)!.temporarilyClosed,
-                                          style: AppTypography.labelSmall.copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
+                              Column(
+                                children: [
+                                  if (venue?.temporarilyClosed ?? false)
                                     Container(
-                                      width: 32,
-                                      height: 32,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      margin: const EdgeInsets.only(bottom: 8),
                                       decoration: BoxDecoration(
-                                        color: AppColors.surfaceContainerLow,
-                                        shape: BoxShape.circle,
+                                        color: Colors.red.shade600,
+                                        borderRadius: BorderRadius.circular(4),
                                       ),
-                                      child: const Icon(
-                                        Icons.favorite_border,
-                                        size: 20,
-                                        color: AppColors.onSurfaceVariant,
+                                      child: Text(
+                                        AppLocalizations.of(context)!.temporarilyClosed,
+                                        style: AppTypography.labelSmall.copyWith(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceContainerLow,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.favorite_border,
+                                      size: 20,
+                                      color: AppColors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

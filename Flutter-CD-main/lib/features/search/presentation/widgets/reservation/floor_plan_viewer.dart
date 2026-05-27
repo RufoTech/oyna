@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../../core/models/layout_item_model.dart';
 
 class FloorPlanViewer extends StatefulWidget {
@@ -82,10 +83,10 @@ class _FloorPlanViewerState extends State<FloorPlanViewer> {
       builder: (context, constraints) {
         final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
         
-        // Auto-initialize zoom/position if size, items, or state changes
+        // Auto-initialize zoom/position if size, items, or state changes - optimized with deep list comparison
         if (!_isInitialized || 
             _lastViewportSize != viewportSize || 
-            _lastItems != widget.items) {
+            !listEquals(_lastItems, widget.items)) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               setState(() {

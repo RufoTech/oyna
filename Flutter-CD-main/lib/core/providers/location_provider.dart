@@ -42,7 +42,22 @@ class LocationService {
       return null;
     }
 
-    // When permissions are OK, get the current location.
+    // Try to get last known location first to make it instant
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      final latLng = LatLng(lastKnown.latitude, lastKnown.longitude);
+      _ref.read(userLocationProvider.notifier).state = latLng;
+      
+      // Update fresh location in the background asynchronously
+      Geolocator.getCurrentPosition().then((freshPosition) {
+        final freshLatLng = LatLng(freshPosition.latitude, freshPosition.longitude);
+        _ref.read(userLocationProvider.notifier).state = freshLatLng;
+      }).catchError((_) {});
+      
+      return latLng;
+    }
+
+    // Fall back to getCurrentPosition if no last known location is cached
     final position = await Geolocator.getCurrentPosition();
     final latLng = LatLng(position.latitude, position.longitude);
     

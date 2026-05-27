@@ -3,7 +3,6 @@ import '../../../../l10n/app_localizations.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/widgets/glass_panel.dart';
 
 /// Bottom navigation bar with pill shape, glass effect, and animated sliding indicator.
 class HomeBottomNavBar extends StatefulWidget {
@@ -69,18 +68,21 @@ class _HomeBottomNavBarState extends State<HomeBottomNavBar>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GlassPanel(
-        borderRadius: BorderRadius.circular(100),
-        backgroundColor: AppColors.surface,
-        backgroundOpacity: 0.8,
-        blurSigma: 30,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 32,
-            spreadRadius: 2,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(100),
+          border: Border.all(
+            color: AppColors.outlineVariant.withValues(alpha: 0.1),
           ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 32,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
         child: SizedBox(
           height: 64,
           child: LayoutBuilder(

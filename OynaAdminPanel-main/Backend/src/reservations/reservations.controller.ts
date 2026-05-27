@@ -19,6 +19,8 @@ import { VenuesService } from '../venues/venues.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+import { UpdateReservationStatusDto, CheckInDto } from './dto/reservations.dto';
 
 interface AuthRequest extends Request {
   user: { sub: string; email: string; displayName?: string; role: string };
@@ -71,8 +73,8 @@ export class ReservationsController {
   /** PATCH /reservations/:id/status — Admin updates status */
   @Patch(':id/status')
   async updateStatus(
-    @Param('id') id: string,
-    @Body() body: { status: 'accepted' | 'rejected' | 'canceled'; rejectReason?: string },
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() body: UpdateReservationStatusDto,
     @Req() req: AuthRequest,
   ) {
     const adminId = req.user.sub;
@@ -155,7 +157,7 @@ export class ReservationsController {
   @Patch('check-in')
   async checkIn(
     @Req() req: AuthRequest,
-    @Body() body: { reservationNumber: string; venueId: string },
+    @Body() body: CheckInDto,
   ) {
     const adminId = req.user.sub;
     

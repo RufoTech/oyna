@@ -15,16 +15,30 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static const String _tokenKey = 'auth_token';
 
+  String? _cachedToken;
+  bool _isTokenCached = false;
+
   /// Exposes the real-time stream of the user authentication state.
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
   /// Currently logged in user.
   User? get currentUser => _auth.currentUser;
 
-  /// Get stored JWT token
+  /// Get stored JWT token (cached in memory to avoid disk I/O overhead)
   Future<String?> getToken() async {
+    if (_isTokenCached) return _cachedToken;
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    _cachedToken = prefs.getString(_tokenKey);
+    _isTokenCached = true;
+    return _cachedToken;
+  }
+
+  /// Sets and caches token
+  Future<void> saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tokenKey, token);
+    _cachedToken = token;
+    _isTokenCached = true;
   }
 
   /// Get decoded user payload from JWT token
@@ -106,6 +120,8 @@ class AuthService {
         if (token != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_tokenKey, token);
+          _cachedToken = token;
+          _isTokenCached = true;
           debugPrint("Backend sync successful, token stored.");
         }
       }
@@ -138,6 +154,8 @@ class AuthService {
         if (newToken != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_tokenKey, newToken);
+          _cachedToken = newToken;
+          _isTokenCached = true;
           return true;
         }
       }
@@ -153,6 +171,8 @@ class AuthService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenKey);
+      _cachedToken = null;
+      _isTokenCached = true;
     } catch (e) {
       debugPrint("Error removing token: $e");
     }

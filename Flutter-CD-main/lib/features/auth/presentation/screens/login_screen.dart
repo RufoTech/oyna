@@ -83,8 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
         // Store token and navigate
         if (response.data['access_token'] != null) {
           final token = response.data['access_token'];
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('auth_token', token);
+          await AuthService().saveToken(token);
 
           if (mounted) {
             Navigator.of(context).pushAndRemoveUntil(
@@ -174,8 +173,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
     return Scaffold(
       backgroundColor: AppColors.surface,
       body: Stack(

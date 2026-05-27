@@ -71,6 +71,8 @@ class SearchResultCard extends StatelessWidget {
               children: [
                 CachedNetworkImage(
                   imageUrl: AppConfig.formatImageUrl(imageUrl) ?? '',
+                  memCacheWidth: 600,
+                  memCacheHeight: 400,
                   fit: BoxFit.cover,
                   placeholder: (context, url) => Container(
                     color: AppColors.surfaceContainerHigh,

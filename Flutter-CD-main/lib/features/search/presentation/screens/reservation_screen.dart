@@ -91,16 +91,27 @@ class _ReservationScreenState extends State<ReservationScreen> {
       }
     });
 
-    // 2. Local real-time clock monitor
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_venueBlocked && !widget.venue.isOpenByClock) {
-        setState(() {
-          _venueBlocked = true;
-          _blockedReason = AppLocalizations.of(context)!.venueClosedByClockMsg;
-        });
+    // 2. Local real-time clock monitor - One-shot Timer instead of 1-second polling
+    if (!widget.venue.isOpenByClock) {
+      _venueBlocked = true;
+      _blockedReason = AppLocalizations.of(context)!.venueClosedByClockMsg;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
         _showVenueBlockedDialog();
+      });
+    } else {
+      final timeToClose = widget.venue.durationUntilClose;
+      if (timeToClose != null) {
+        _clockTimer = Timer(timeToClose, () {
+          if (mounted && !_venueBlocked) {
+            setState(() {
+              _venueBlocked = true;
+              _blockedReason = AppLocalizations.of(context)!.venueClosedByClockMsg;
+            });
+            _showVenueBlockedDialog();
+          }
+        });
       }
-    });
+    }
 
     // 3. Fetch initial available table counts
     _fetchAvailableCounts();

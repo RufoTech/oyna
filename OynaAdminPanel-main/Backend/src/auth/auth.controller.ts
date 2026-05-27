@@ -17,23 +17,19 @@ import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
-
-interface LoginDto {
-  email: string;
-  password: string;
-}
-
-interface CreateAdminDto {
-  email: string;
-  password: string;
-  displayName: string;
-}
-
-interface RegisterDto {
-  email: string;
-  password: string;
-  displayName: string;
-}
+import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+import {
+  LoginDto,
+  CreateAdminDto,
+  RegisterDto,
+  VerifyOtpDto,
+  ResendOtpDto,
+  ForgotPasswordDto,
+  VerifyResetCodeDto,
+  ResetPasswordDto,
+  GoogleLoginDto,
+  ResetAdminPasswordDto,
+} from './dto/auth.dto';
 
 interface AuthRequest extends Request {
   user: {
@@ -62,64 +58,66 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('verify-otp')
-  async verifyOtp(@Body() { email, otpCode }: { email: string; otpCode: string }) {
-    return this.authService.verifyOtp(email, otpCode);
+  async verifyOtp(@Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto.email, dto.otpCode);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('resend-otp')
-  async resendOtp(@Body() { email }: { email: string }) {
-    return this.authService.resendOtp(email);
+  async resendOtp(@Body() dto: ResendOtpDto) {
+    return this.authService.resendOtp(dto.email);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login/user')
-  async userLogin(@Body() { email, password }: LoginDto) {
-    return this.authService.loginUser(email, password);
+  async userLogin(@Body() dto: LoginDto) {
+    return this.authService.loginUser(dto.email, dto.password);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('forgot-password')
-  async forgotPassword(@Body() { email }: { email: string }) {
-    return this.authService.forgotPassword(email);
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('verify-reset-code')
-  async verifyResetCode(@Body() { email, resetCode }: { email: string; resetCode: string }) {
-    return this.authService.verifyResetCode(email, resetCode);
+  async verifyResetCode(@Body() dto: VerifyResetCodeDto) {
+    return this.authService.verifyResetCode(dto.email, dto.resetCode);
   }
 
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('reset-password')
   async resetPassword(
-    @Body() { email, resetCode, newPassword }: { email: string; resetCode: string; newPassword: string },
+    @Body() dto: ResetPasswordDto,
   ) {
-    return this.authService.resetPasswordWithCode(email, resetCode, newPassword);
+    return this.authService.resetPasswordWithCode(dto.email, dto.resetCode, dto.newPassword);
   }
 
   // ══════════════════════════════════════════════════════════════
   //  ADMIN AUTH ENDPOINTS (existing)
   // ══════════════════════════════════════════════════════════════
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login/admin')
-  async adminLogin(@Body() { email, password }: LoginDto) {
-    const user = await this.authService.validateUser(email, password);
+  async adminLogin(@Body() dto: LoginDto) {
+    const user = await this.authService.validateUser(dto.email, dto.password);
     if (!user) throw new UnauthorizedException('Yanlis email ve ya sifre.');
     this.authService.ensureRole(user, 'ADMIN');
     return this.authService.login(user);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login/super-admin')
-  async superAdminLogin(@Body() { email, password }: LoginDto) {
-    const user = await this.authService.validateUser(email, password);
+  async superAdminLogin(@Body() dto: LoginDto) {
+    const user = await this.authService.validateUser(dto.email, dto.password);
     if (!user) throw new UnauthorizedException('Yanlis email ve ya sifre.');
     this.authService.ensureRole(user, 'SUPER_ADMIN');
     return this.authService.login(user);
@@ -145,7 +143,7 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Delete('admins/:id')
-  async deleteAdmin(@Param('id') id: string, @Req() req: AuthRequest) {
+  async deleteAdmin(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     if (req.user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Bu əməliyyat yalnız super admin üçündür.');
     }
@@ -155,23 +153,21 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Patch('admins/:id/password')
   async resetAdminPassword(
-    @Param('id') id: string,
-    @Body('password') pass: string,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: ResetAdminPasswordDto,
     @Req() req: AuthRequest,
   ) {
     if (req.user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Bu əməliyyat yalnız super admin üçündür.');
     }
-    return this.authService.resetPassword(id, pass);
+    return this.authService.resetPassword(id, dto.password);
   }
 
   @HttpCode(HttpStatus.OK)
   @Post('google')
   async googleLogin(
     @Body()
-    dto: {
-      idToken: string;
-    },
+    dto: GoogleLoginDto,
   ) {
     return this.authService.syncGoogleUser(dto);
   }
@@ -188,13 +184,13 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('favorites/:venueId')
-  async addFavorite(@Param('venueId') venueId: string, @Req() req: AuthRequest) {
+  async addFavorite(@Param('venueId', ParseObjectIdPipe) venueId: string, @Req() req: AuthRequest) {
     return this.authService.addFavorite(req.user.sub, venueId);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete('favorites/:venueId')
-  async removeFavorite(@Param('venueId') venueId: string, @Req() req: AuthRequest) {
+  async removeFavorite(@Param('venueId', ParseObjectIdPipe) venueId: string, @Req() req: AuthRequest) {
     return this.authService.removeFavorite(req.user.sub, venueId);
   }
 

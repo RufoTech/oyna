@@ -23,6 +23,7 @@ class Venue {
   final VenueSpecs? specs;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final double? distanceMeters;
 
   Venue({
     required this.id,
@@ -45,6 +46,7 @@ class Venue {
     this.specs,
     this.createdAt,
     this.updatedAt,
+    this.distanceMeters,
   });
 
   factory Venue.fromJson(Map<String, dynamic> json) {
@@ -141,6 +143,66 @@ class Venue {
     }
   }
 
+  /// Returns the duration remaining until this venue closes today.
+  /// Returns null if the venue is 24/7, already closed, or has no schedule.
+  /// Used by ReservationScreen to schedule a one-shot timer instead of polling.
+  Duration? get durationUntilClose {
+    if (temporarilyClosed) return null;
+    if (operatingHours == null) return null;
+    if (operatingHours!.is24_7) return null;
+
+    final now = DateTime.now();
+    final weekdays = [
+      'monday', 'tuesday', 'wednesday', 'thursday',
+      'friday', 'saturday', 'sunday'
+    ];
+    final todayStr = weekdays[now.weekday - 1];
+    final schedule = operatingHours!.schedule[todayStr];
+
+    if (schedule == null || schedule.closed) return null;
+    if (schedule.open == null || schedule.close == null) return null;
+
+    try {
+      final closeParts = schedule.close!.split(':');
+      final openParts = schedule.open!.split(':');
+      final openTime = int.parse(openParts[0]) * 60 + int.parse(openParts[1]);
+      final closeTime = int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
+
+      // 00:00 - 00:00 means 24-hour open
+      if (openTime == 0 && closeTime == 0) return null;
+
+      final nowMinutes = now.hour * 60 + now.minute;
+      int minutesLeft;
+
+      if (schedule.isNextDay || closeTime < openTime) {
+        // Overnight schedule: e.g. 22:00 - 04:00
+        if (nowMinutes >= openTime) {
+          // Before midnight
+          minutesLeft = (24 * 60 - nowMinutes) + closeTime;
+        } else if (nowMinutes <= closeTime) {
+          // After midnight
+          minutesLeft = closeTime - nowMinutes;
+        } else {
+          return null; // Already closed
+        }
+      } else {
+        // Normal schedule: e.g. 09:00 - 23:00
+        if (nowMinutes >= openTime && nowMinutes <= closeTime) {
+          minutesLeft = closeTime - nowMinutes;
+        } else {
+          return null; // Already closed
+        }
+      }
+
+      // Convert to seconds for precision (account for current seconds)
+      final remainingSeconds = (minutesLeft * 60) - now.second;
+      if (remainingSeconds <= 0) return null;
+      return Duration(seconds: remainingSeconds);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Create a copy of this Venue with updated status fields (for real-time socket updates).
   Venue copyWithStatus({String? status, bool? temporarilyClosed}) {
     return Venue(
@@ -164,6 +226,34 @@ class Venue {
       specs: specs,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      distanceMeters: distanceMeters,
+    );
+  }
+
+  /// Create a copy of this Venue with updated distance fields.
+  Venue copyWithDistance(double? distanceMeters) {
+    return Venue(
+      id: id,
+      adminId: adminId,
+      status: status,
+      temporarilyClosed: temporarilyClosed,
+      logo: logo,
+      name: name,
+      category: category,
+      slogan: slogan,
+      description: description,
+      location: location,
+      branches: branches,
+      media: media,
+      pricing: pricing,
+      amenities: amenities,
+      operatingHours: operatingHours,
+      contact: contact,
+      bookingRules: bookingRules,
+      specs: specs,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      distanceMeters: distanceMeters,
     );
   }
 }

@@ -19,6 +19,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { ReservationsGateway } from '../reservations/reservations.gateway';
+import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+import { BlockUserDto } from './dto/venues.dto';
 
 interface AuthRequest extends Request {
   user: { sub: string; email: string; displayName?: string; role: string };
@@ -53,13 +55,13 @@ export class VenuesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string, @Req() req: AuthRequest) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     return this.venuesService.findOne(id, req.user.sub);
   }
 
   @Patch(':id')
   async update(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: Partial<Venue>,
     @Req() req: AuthRequest,
   ) {
@@ -78,7 +80,7 @@ export class VenuesController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @Req() req: AuthRequest) {
+  remove(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     return this.venuesService.remove(id, req.user.sub);
   }
 
@@ -87,14 +89,14 @@ export class VenuesController {
   // ═══════════════════════════════════════════════
 
   @Get(':id/blocked-users')
-  getBlockedUsers(@Param('id') id: string, @Req() req: AuthRequest) {
+  getBlockedUsers(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     return this.venuesService.getBlockedUsers(id, req.user.sub);
   }
 
   @Patch(':id/block-user')
   blockUser(
-    @Param('id') id: string,
-    @Body() body: { email: string; action: 'block' | 'unblock' },
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() body: BlockUserDto,
     @Req() req: AuthRequest,
   ) {
     return this.venuesService.blockUserForVenue(id, body.email, body.action, req.user.sub);
@@ -105,13 +107,13 @@ export class VenuesController {
   // ═══════════════════════════════════════════════
 
   @Get(':id/specs')
-  getSpecs(@Param('id') id: string, @Req() req: AuthRequest) {
+  getSpecs(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     return this.venuesService.getSpecs(id, req.user.sub);
   }
 
   @Patch(':id/specs')
   updateSpecs(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() specsDto: any,
     @Req() req: AuthRequest,
   ) {
@@ -123,13 +125,13 @@ export class VenuesController {
   // ═══════════════════════════════════════════════
 
   @Get(':id/layout')
-  getLayout(@Param('id') id: string, @Req() req: AuthRequest) {
+  getLayout(@Param('id', ParseObjectIdPipe) id: string, @Req() req: AuthRequest) {
     return this.venuesService.getLayout(id, req.user.sub);
   }
 
   @Patch(':id/layout')
   async updateLayout(
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() layoutDto: any,
     @Req() req: AuthRequest,
   ) {

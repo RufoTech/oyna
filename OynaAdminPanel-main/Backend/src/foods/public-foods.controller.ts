@@ -1,5 +1,6 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { FoodsService } from './foods.service';
+import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
 
 /**
  * Public endpoints for the Flutter mobile app to fetch foods.
@@ -10,7 +11,7 @@ export class PublicFoodsController {
   constructor(private readonly foodsService: FoodsService) {}
 
   @Get(':adminId')
-  findAllByAdmin(@Param('adminId') adminId: string) {
+  findAllByAdmin(@Param('adminId', ParseObjectIdPipe) adminId: string) {
     // Reusing the existing findAll method since it's just querying by adminId
     return this.foodsService.findAll(adminId);
   }

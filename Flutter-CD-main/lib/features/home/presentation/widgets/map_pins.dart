@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../shared/widgets/glass_panel.dart';
+
 
 /// Map pins overlaid on the map background—one active and several inactive.
 class MapPins extends StatelessWidget {
@@ -72,21 +72,22 @@ class _ActivePin extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         // Label
-        GlassPanel(
-          borderRadius: BorderRadius.circular(100),
-          backgroundOpacity: 0.9,
-          blurSigma: 25,
+        Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withValues(alpha: 0.05),
-              blurRadius: 20,
-              spreadRadius: 2,
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.1),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.05),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
           child: Text(
             'LevelUp Lounge',
             style: AppTypography.labelSmall.copyWith(

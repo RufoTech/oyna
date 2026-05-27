@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+
 import 'package:latlong2/latlong.dart';
 import '../../../../l10n/app_localizations.dart';
 
@@ -12,7 +12,6 @@ import 'venue_detail_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import '../../../../core/providers/venues_provider.dart';
-import '../../../../core/providers/location_provider.dart';
 import '../widgets/search_result_skeleton.dart';
 
 /// The search listing view with infinite scroll pagination.
@@ -23,17 +22,20 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepAliveClientMixin {
   Timer? _debounce;
   Timer? _clockTimer;
   final ScrollController _scrollController = ScrollController();
 
   @override
+  bool get wantKeepAlive => true;
+
+  @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // Real-time saata görə (məs. 18:00-da açılır) vəziyyətlərin güncəllənməsi üçün taymer
-    _clockTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    // Real-time saata görə (məs. 18:00-da açılır) vəziyyətlərin güncəllənməsi üçün taymer - optimized to 1 minute
+    _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
     // Fetch user location if not already available
@@ -45,16 +47,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     });
   }
 
-  /// Calculates the distance in meters between the user and a venue.
-  double? _calculateDistanceMeters(LatLng? userLocation, double venueLat, double venueLng) {
-    if (userLocation == null) return null;
-    return Geolocator.distanceBetween(
-      userLocation.latitude,
-      userLocation.longitude,
-      venueLat,
-      venueLng,
-    );
-  }
+
 
   /// Formats a distance in meters to a human-readable string.
   String _formatDistance(double? meters) {
@@ -224,6 +217,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final l10n = AppLocalizations.of(context)!;
     final searchState = ref.watch(paginatedSearchProvider);
     final userLocation = ref.watch(userLocationProvider);
@@ -349,16 +343,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 !(venue.temporarilyClosed) &&
                 venue.isOpenByClock;
 
-            // Calculate dynamic distance from user GPS to venue
-            double? distanceMeters;
-            if (venue.location != null && venue.location!.latitude != 0 && venue.location!.longitude != 0) {
-              distanceMeters = _calculateDistanceMeters(
-                userLocation, 
-                venue.location!.latitude, 
-                venue.location!.longitude
-              );
-            }
-            final distanceText = _formatDistance(distanceMeters);
+            final distanceText = _formatDistance(venue.distanceMeters);
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 24),

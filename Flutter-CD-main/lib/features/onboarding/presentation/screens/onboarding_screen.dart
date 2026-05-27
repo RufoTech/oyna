@@ -59,8 +59,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final padding = MediaQuery.of(context).padding;
-    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.paddingOf(context);
+    final size = MediaQuery.sizeOf(context);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -74,11 +74,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               width: 500,
               height: 500,
               decoration: BoxDecoration(
-                color: AppColors.onSurface.withValues(alpha: 0.03),
                 shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.onSurface.withValues(alpha: 0.03),
+                    Colors.transparent,
+                  ],
+                ),
               ),
               transform: Matrix4.translationValues(100, -100, 0),
-            ).blurred(sigma: 120),
+            ),
           ),
           Positioned(
             bottom: 0,
@@ -87,11 +92,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               width: 400,
               height: 400,
               decoration: BoxDecoration(
-                color: AppColors.outlineVariant.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.outlineVariant.withValues(alpha: 0.1),
+                    Colors.transparent,
+                  ],
+                ),
               ),
               transform: Matrix4.translationValues(-100, 100, 0),
-            ).blurred(sigma: 100),
+            ),
           ),
 
           // Main PageView
@@ -104,9 +114,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               });
             },
             children: [
-              _buildStepOne(padding, size),
-              _buildStepTwo(padding, size),
-              _buildStepThree(padding, size),
+              OnboardingStepOne(padding: padding, size: size),
+              OnboardingStepTwo(padding: padding, size: size),
+              OnboardingStepThree(padding: padding, size: size),
             ],
           ),
 
@@ -233,7 +243,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
-  Widget _buildStepOne(EdgeInsets padding, Size size) {
+}
+
+class OnboardingStepOne extends StatelessWidget {
+  final EdgeInsets padding;
+  final Size size;
+
+  const OnboardingStepOne({
+    super.key,
+    required this.padding,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -371,8 +394,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ],
     );
   }
+}
 
-  Widget _buildStepTwo(EdgeInsets padding, Size size) {
+class OnboardingStepTwo extends StatelessWidget {
+  final EdgeInsets padding;
+  final Size size;
+
+  const OnboardingStepTwo({
+    super.key,
+    required this.padding,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -602,8 +637,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ],
     );
   }
+}
 
-  Widget _buildStepThree(EdgeInsets padding, Size size) {
+class OnboardingStepThree extends StatelessWidget {
+  final EdgeInsets padding;
+  final Size size;
+
+  const OnboardingStepThree({
+    super.key,
+    required this.padding,
+    required this.size,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [

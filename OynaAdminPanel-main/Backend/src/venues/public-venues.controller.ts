@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { VenuesService } from './venues.service';
+import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
 
 /**
  * Public endpoints for the Flutter mobile app.
@@ -36,19 +37,19 @@ export class PublicVenuesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.venuesService.findOnePublic(id);
   }
 
   /** GET /public/venues/:id/layout — Public layout for Flutter floor plan */
   @Get(':id/layout')
-  getPublicLayout(@Param('id') id: string) {
+  getPublicLayout(@Param('id', ParseObjectIdPipe) id: string) {
     return this.venuesService.getPublicLayout(id);
   }
 
   /** GET /public/venues/:id/available-tables — Available table counts by tier */
   @Get(':id/available-tables')
-  getAvailableTableCounts(@Param('id') id: string) {
+  getAvailableTableCounts(@Param('id', ParseObjectIdPipe) id: string) {
     return this.venuesService.getAvailableTableCounts(id);
   }
 }

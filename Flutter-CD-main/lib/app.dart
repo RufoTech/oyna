@@ -13,7 +13,7 @@ import 'features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'features/home/presentation/screens/main_screen.dart';
 
 /// Root application widget.
-class App extends ConsumerWidget {
+class App extends ConsumerStatefulWidget {
   final bool isFirstLaunch;
 
   const App({
@@ -22,7 +22,32 @@ class App extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<App> createState() => _AppState();
+}
+
+class _AppState extends ConsumerState<App> {
+  late Future<bool> _loginFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loginFuture = _isUserLoggedIn();
+  }
+
+  Future<bool> _isUserLoggedIn() async {
+    // 1. Check JWT token
+    final token = await AuthService().getToken();
+    if (token != null && token.isNotEmpty) return true;
+
+    // 2. Check Firebase User
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) return true;
+
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final locale = ref.watch(localeProvider);
 
     return MaterialApp(
@@ -47,7 +72,7 @@ class App extends ConsumerWidget {
       ],
 
       home: FutureBuilder<bool>(
-        future: _isUserLoggedIn(),
+        future: _loginFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(
@@ -61,22 +86,10 @@ class App extends ConsumerWidget {
           }
 
           // Otherwise show Onboarding or Login
-          return isFirstLaunch ? const OnboardingScreen() : const LoginScreen();
+          return widget.isFirstLaunch ? const OnboardingScreen() : const LoginScreen();
         },
       ),
     );
-  }
-
-  Future<bool> _isUserLoggedIn() async {
-    // 1. Check JWT token
-    final token = await AuthService().getToken();
-    if (token != null && token.isNotEmpty) return true;
-
-    // 2. Check Firebase User
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) return true;
-
-    return false;
   }
 }
 

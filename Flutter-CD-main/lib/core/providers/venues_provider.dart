@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import '../models/venue_model.dart';
 import '../repositories/venue_repository.dart';
 import 'location_provider.dart';
@@ -95,6 +97,27 @@ class PaginatedSearchNotifier extends StateNotifier<PaginatedSearchState> {
   static const int _pageSize = 10;
 
   PaginatedSearchNotifier(this._repo, this._ref) : super(const PaginatedSearchState()) {
+    // Listen to userLocationProvider to update distances of current venues
+    _ref.listen<LatLng?>(userLocationProvider, (previous, next) {
+      if (next != null && state.venues.isNotEmpty) {
+        final updated = state.venues.map((venue) {
+          if (venue.location != null &&
+              venue.location!.latitude != 0 &&
+              venue.location!.longitude != 0) {
+            final distance = Geolocator.distanceBetween(
+              next.latitude,
+              next.longitude,
+              venue.location!.latitude,
+              venue.location!.longitude,
+            );
+            return venue.copyWithDistance(distance);
+          }
+          return venue;
+        }).toList();
+        state = state.copyWith(venues: updated);
+      }
+    });
+
     // Load first page on creation
     loadFirstPage();
   }
@@ -139,8 +162,25 @@ class PaginatedSearchNotifier extends StateNotifier<PaginatedSearchState> {
         lng: lng,
       );
 
+      final userLocation = _ref.read(userLocationProvider);
+      final venuesWithDistance = response.data.map((venue) {
+        if (userLocation != null &&
+            venue.location != null &&
+            venue.location!.latitude != 0 &&
+            venue.location!.longitude != 0) {
+          final distance = Geolocator.distanceBetween(
+            userLocation.latitude,
+            userLocation.longitude,
+            venue.location!.latitude,
+            venue.location!.longitude,
+          );
+          return venue.copyWithDistance(distance);
+        }
+        return venue;
+      }).toList();
+
       state = state.copyWith(
-        venues: response.data,
+        venues: venuesWithDistance,
         currentPage: 1,
         total: response.total,
         hasMore: response.hasMore,
@@ -185,8 +225,25 @@ class PaginatedSearchNotifier extends StateNotifier<PaginatedSearchState> {
         lng: lng,
       );
 
+      final userLocation = _ref.read(userLocationProvider);
+      final newVenuesWithDistance = response.data.map((venue) {
+        if (userLocation != null &&
+            venue.location != null &&
+            venue.location!.latitude != 0 &&
+            venue.location!.longitude != 0) {
+          final distance = Geolocator.distanceBetween(
+            userLocation.latitude,
+            userLocation.longitude,
+            venue.location!.latitude,
+            venue.location!.longitude,
+          );
+          return venue.copyWithDistance(distance);
+        }
+        return venue;
+      }).toList();
+
       state = state.copyWith(
-        venues: [...state.venues, ...response.data],
+        venues: [...state.venues, ...newVenuesWithDistance],
         currentPage: nextPage,
         total: response.total,
         hasMore: response.hasMore,

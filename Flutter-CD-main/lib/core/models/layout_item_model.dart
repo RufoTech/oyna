@@ -53,4 +53,49 @@ class LayoutItem {
   bool get isReserved => status == 'reserved';
   bool get isOccupied => status == 'occupied';
   bool get isDisabled => status == 'disabled';
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! LayoutItem) return false;
+
+    return other.id == id &&
+        other.type == type &&
+        other.tierId == tierId &&
+        other.name == name &&
+        other.x == x &&
+        other.y == y &&
+        other.w == w &&
+        other.h == h &&
+        other.status == status &&
+        other.price == price &&
+        other.capacity == capacity &&
+        _listEquals(other.connectedTo, connectedTo);
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      id,
+      type,
+      tierId,
+      name,
+      x,
+      y,
+      w,
+      h,
+      status,
+      price,
+      capacity,
+      Object.hashAll(connectedTo),
+    );
+  }
 }

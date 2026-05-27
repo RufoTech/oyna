@@ -6,7 +6,7 @@ import '../../../../core/models/venue_model.dart';
 import '../../../../core/providers/location_provider.dart';
 import '../widgets/map_background.dart';
 import '../widgets/search_bar_section.dart';
-import '../widgets/filter_chips.dart';
+
 import '../widgets/venue_card.dart';
 import '../widgets/location_fab.dart';
 import '../../../search/presentation/screens/venue_detail_screen.dart';
@@ -96,7 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   double get _screenHeight =>
-      MediaQuery.of(context).size.height;
+      MediaQuery.sizeOf(context).height;
 
   /// Progress from 0.0 (closed) to 1.0 (fully open)
   double get _revealProgress =>
@@ -214,8 +214,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final topPadding = MediaQuery.of(context).padding.top;
-    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final showOverlay = _dragOffset > 0 || _isDetailFullyOpen;
 
     return GestureDetector(
@@ -225,10 +225,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         children: [
           // ── Layer 0: Interactive Map with Markers ──
           Positioned.fill(
-            child: MapBackground(
-              mapController: _mapController,
-              onMarkerTap: (venue) => _showVenueCard(venue),
-              onMapTap: _hideVenueCard,
+            child: RepaintBoundary(
+              child: MapBackground(
+                mapController: _mapController,
+                onMarkerTap: (venue) => _showVenueCard(venue),
+                onMapTap: _hideVenueCard,
+              ),
             ),
           ),
 

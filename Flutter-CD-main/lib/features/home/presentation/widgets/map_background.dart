@@ -11,7 +11,6 @@ import '../../../../core/providers/venues_provider.dart';
 import '../../../../core/models/venue_model.dart';
 import '../../../../core/providers/location_provider.dart';
 import '../../../../core/constants/app_config.dart';
-import '../../../../shared/widgets/glass_panel.dart';
 
 /// Full-screen interactive OpenStreetMap with dynamic venue markers from backend.
 class MapBackground extends ConsumerStatefulWidget {
@@ -243,22 +242,22 @@ class _VenuePin extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 4),
-        // Label
-        GlassPanel(
-          borderRadius: BorderRadius.circular(100),
-          backgroundOpacity: 0.9,
-          blurSigma: 25,
+        Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-          border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withValues(alpha: 0.05),
-              blurRadius: 15,
-              spreadRadius: 1,
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.1),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.05),
+                blurRadius: 15,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
           child: Text(
             venue.name ?? 'Məkan',
             style: AppTypography.labelSmall.copyWith(
@@ -306,22 +305,22 @@ class _ActivePin extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        // Label
-        GlassPanel(
-          borderRadius: BorderRadius.circular(100),
-          backgroundOpacity: 0.9,
-          blurSigma: 25,
+        Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          border: Border.all(
-            color: AppColors.outlineVariant.withValues(alpha: 0.1),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.onSurface.withValues(alpha: 0.05),
-              blurRadius: 20,
-              spreadRadius: 2,
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(100),
+            border: Border.all(
+              color: AppColors.outlineVariant.withValues(alpha: 0.1),
             ),
-          ],
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.onSurface.withValues(alpha: 0.05),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
           child: Text(
             'LevelUp Lounj',
             style: AppTypography.labelSmall.copyWith(
