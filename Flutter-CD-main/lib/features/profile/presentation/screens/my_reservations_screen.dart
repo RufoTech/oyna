@@ -59,7 +59,10 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
       }
 
       // Connect socket for real-time updates
-      SocketService().connect(userId: userId);
+      final token = await AuthService().getToken();
+      if (token != null) {
+        SocketService().connect(userId: userId, token: token);
+      }
 
       final reservations =
           await ReservationRepository().getMyReservations(userId, page: _page, limit: 10);

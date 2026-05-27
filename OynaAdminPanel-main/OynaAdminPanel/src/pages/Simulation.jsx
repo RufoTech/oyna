@@ -308,7 +308,6 @@ const Simulation = () => {
   const [zoom, setZoom] = useState(0.75);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [pendingTableIds, setPendingTableIds] = useState(new Set());
-  const [simCheckInCode, setSimCheckInCode] = useState('');
   const [checkInReservation, { isLoading: isCheckingIn }] = useCheckInReservationMutation();
 
   // --- Reservation Dialog for reserved tables ---
@@ -387,6 +386,40 @@ const Simulation = () => {
       setSelectedReservation(null);
       setRejectMode(false);
       setRejectReason('');
+    } catch (err) {
+      toast.error(t('bookings.toast.error'));
+      console.error(err);
+    }
+  };
+
+  const handleSimCheckIn = async () => {
+    if (!selectedReservation || !selectedReservation.reservationNumber) return;
+    try {
+      await checkInReservation({ 
+        reservationNumber: selectedReservation.reservationNumber, 
+        venueId: selectedReservation.venueId 
+      }).unwrap();
+      
+      toast.success(t('bookings.modal.checkInSuccess', 'Check-in uğurlu! İstifadəçi qeydiyyatdan keçdi.'));
+      setReservationDialogOpen(false);
+      setSelectedReservation(null);
+    } catch (err) {
+      toast.error(err?.data?.message || t('bookings.modal.checkInError', 'Giriş qeydə alına bilmədi.'));
+    }
+  };
+
+  const handleSimNoShow = async () => {
+    if (!selectedReservation) return;
+    try {
+      await updateReservationStatus({ 
+        id: selectedReservation._id, 
+        status: 'rejected', 
+        rejectReason: t('bookings.modal.noShowReason', 'İstifadəçi məkana gəlmədi') 
+      }).unwrap();
+      
+      toast.success(t('bookings.toast.statusSuccess', { status: t('bookings.toast.rejectedStr') }));
+      setReservationDialogOpen(false);
+      setSelectedReservation(null);
     } catch (err) {
       toast.error(t('bookings.toast.error'));
       console.error(err);
@@ -1645,39 +1678,26 @@ const Simulation = () => {
                         {t('bookings.modal.checkInTitle', 'İstifadəçi gəldi?')}
                       </h4>
                       <p className="text-sm text-blue-800/70 dark:text-blue-400/70 mt-1">
-                        Məkana daxil olduqda istifadəçinin rezervasiya kodunu bura daxil edin və gəlişini təsdiqləyin.
+                        Məkana daxil olduqda istifadəçinin gəliş statusunu təsdiqləyin.
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-3 pt-2">
-                    <input 
-                      type="text" 
-                      placeholder={t('bookings.modal.checkInPlaceholder', 'Rezervasiya kodunu daxil edin')}
-                      value={simCheckInCode}
-                      onChange={(e) => setSimCheckInCode(e.target.value)}
-                      className="flex-1 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold uppercase"
-                    />
+                  <div className="flex gap-4 pt-2">
                     <button 
-                      onClick={async () => {
-                        if (!simCheckInCode.trim() || !selectedReservation) return;
-                        try {
-                          await checkInReservation({ 
-                            reservationNumber: simCheckInCode.trim(), 
-                            venueId: selectedReservation.venueId 
-                          }).unwrap();
-                          
-                          toast.success(t('bookings.modal.checkInSuccess', 'Check-in uğurlu! İstifadəçi qeydiyyatdan keçdi.'));
-                          setReservationDialogOpen(false);
-                          setSelectedReservation(null);
-                          setSimCheckInCode('');
-                        } catch (err) {
-                          toast.error(err?.data?.message || t('bookings.modal.checkInError', 'Kod yanlışdır və ya rezervasiya tapılmadı.'));
-                        }
-                      }}
-                      disabled={isCheckingIn || !simCheckInCode.trim()}
-                      className="px-6 rounded-xl text-white font-bold bg-blue-600 shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50"
+                      onClick={handleSimCheckIn}
+                      disabled={isCheckingIn || isUpdating}
+                      className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-white font-bold bg-gradient-to-br from-green-600 to-green-500 shadow-lg shadow-green-500/20 hover:brightness-105 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                     >
-                      {isCheckingIn ? t('common.loading', 'Yüklənir...') : t('bookings.modal.checkInBtn', 'Gəlməsini Təsdiqlə')}
+                      <span className="material-symbols-outlined text-xl">check_circle</span>
+                      {isCheckingIn ? t('common.loading', 'Yüklənir...') : t('bookings.modal.checkInBtn', 'Gəldi')}
+                    </button>
+                    <button 
+                      onClick={handleSimNoShow}
+                      disabled={isCheckingIn || isUpdating}
+                      className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-error font-bold bg-white dark:bg-slate-900 border border-error/20 hover:bg-error/5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xl">cancel</span>
+                      {isUpdating ? t('common.loading', 'Yüklənir...') : t('bookings.modal.noShowBtn', 'Gəlmədi')}
                     </button>
                   </div>
                 </section>

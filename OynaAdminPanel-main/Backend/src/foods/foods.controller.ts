@@ -12,14 +12,17 @@ import {
 import { Request } from 'express';
 import { Types } from 'mongoose';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { FoodsService } from './foods.service';
 import { Food } from './schemas/food.schema';
 
 interface AuthRequest extends Request {
-  user: { sub: string; email: string; displayName?: string };
+  user: { sub: string; email: string; displayName?: string; role: string };
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPER_ADMIN')
 @Controller('foods')
 export class FoodsController {
   constructor(private readonly foodsService: FoodsService) {}

@@ -29,7 +29,9 @@ const DashboardLayout = ({ user, onLogout, children }) => {
       Notification.requestPermission();
     }
 
+    const token = localStorage.getItem('access_token');
     const socket = io(import.meta.env.VITE_API_URL, {
+      auth: { token },
       query: { role: 'admin', adminId: user?._id },
       transports: ['websocket'],
     });

@@ -19,7 +19,6 @@ const Bookings = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
-  const [checkInCode, setCheckInCode] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const dispatch = useDispatch();
 
@@ -89,19 +88,36 @@ const Bookings = () => {
   };
 
   const handleCheckIn = async () => {
-    if (!checkInCode.trim() || !selectedRes) return;
+    if (!selectedRes || !selectedRes.reservationNumber) return;
     try {
       await checkInReservation({ 
-        reservationNumber: checkInCode.trim(), 
+        reservationNumber: selectedRes.reservationNumber, 
         venueId: selectedRes.venueId 
       }).unwrap();
       
       toast.success(t('bookings.modal.checkInSuccess', 'Check-in uğurlu! İstifadəçi qeydiyyatdan keçdi.'));
       dispatch(dashboardApi.util.invalidateTags(['Dashboard']));
       setSelectedRes(null);
-      setCheckInCode('');
     } catch (err) {
-      toast.error(err?.data?.message || t('bookings.modal.checkInError', 'Kod yanlışdır və ya rezervasiya tapılmadı.'));
+      toast.error(err?.data?.message || t('bookings.modal.checkInError', 'Giriş qeydə alına bilmədi.'));
+    }
+  };
+
+  const handleNoShow = async () => {
+    if (!selectedRes) return;
+    try {
+      await updateStatus({ 
+        id: selectedRes._id, 
+        status: 'rejected', 
+        rejectReason: t('bookings.modal.noShowReason', 'İstifadəçi məkana gəlmədi') 
+      }).unwrap();
+      
+      toast.success(t('bookings.toast.statusSuccess', { status: t('bookings.toast.rejectedStr') }));
+      dispatch(dashboardApi.util.invalidateTags(['Dashboard']));
+      setSelectedRes(null);
+    } catch (err) {
+      toast.error(t('bookings.toast.error'));
+      console.error(err);
     }
   };
 
@@ -308,7 +324,6 @@ const Bookings = () => {
                 setSelectedRes(null);
                 setRejectMode(false);
                 setRejectReason('');
-                setCheckInCode('');
               }} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-low dark:hover:bg-slate-800 transition-colors text-on-surface-variant dark:text-slate-400">
                 <span className="material-symbols-outlined">close</span>
               </button>
@@ -411,24 +426,26 @@ const Bookings = () => {
                         {t('bookings.modal.checkInTitle', 'İstifadəçi gəldi?')}
                       </h4>
                       <p className="text-sm text-blue-800/70 dark:text-blue-400/70 mt-1">
-                        Məkana daxil olduqda istifadəçinin rezervasiya kodunu bura daxil edin və gəlişini təsdiqləyin.
+                        Məkana daxil olduqda istifadəçinin gəliş statusunu təsdiqləyin.
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-3 pt-2">
-                    <input 
-                      type="text" 
-                      placeholder={t('bookings.modal.checkInPlaceholder', 'Rezervasiya kodunu daxil edin')}
-                      value={checkInCode}
-                      onChange={(e) => setCheckInCode(e.target.value)}
-                      className="flex-1 bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 font-bold uppercase"
-                    />
+                  <div className="flex gap-4 pt-2">
                     <button 
                       onClick={handleCheckIn}
-                      disabled={isCheckingIn || !checkInCode.trim()}
-                      className="px-6 rounded-xl text-white font-bold bg-blue-600 shadow-lg shadow-blue-500/30 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50"
+                      disabled={isCheckingIn || isUpdating}
+                      className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-white font-bold bg-gradient-to-br from-green-600 to-green-500 shadow-lg shadow-green-500/20 hover:brightness-105 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                     >
-                      {isCheckingIn ? t('common.loading') : t('bookings.modal.checkInBtn', 'Gəlməsini Təsdiqlə')}
+                      <span className="material-symbols-outlined text-xl">check_circle</span>
+                      {isCheckingIn ? t('common.loading') : t('bookings.modal.checkInBtn', 'Gəldi')}
+                    </button>
+                    <button 
+                      onClick={handleNoShow}
+                      disabled={isCheckingIn || isUpdating}
+                      className="flex-1 flex items-center justify-center gap-2 py-4 px-6 rounded-xl text-error font-bold bg-white dark:bg-slate-900 border border-error/20 hover:bg-error/5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-xl">cancel</span>
+                      {isUpdating ? t('common.loading') : t('bookings.modal.noShowBtn', 'Gəlmədi')}
                     </button>
                   </div>
                 </section>

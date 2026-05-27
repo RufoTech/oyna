@@ -14,6 +14,7 @@ import {
   Delete,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -51,42 +52,49 @@ export class AuthController {
   //  MOBILE USER AUTH ENDPOINTS
   // ══════════════════════════════════════════════════════════════
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('register')
   async register(@Body() dto: RegisterDto) {
     return this.authService.registerUser(dto);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('verify-otp')
   async verifyOtp(@Body() { email, otpCode }: { email: string; otpCode: string }) {
     return this.authService.verifyOtp(email, otpCode);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('resend-otp')
   async resendOtp(@Body() { email }: { email: string }) {
     return this.authService.resendOtp(email);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login/user')
   async userLogin(@Body() { email, password }: LoginDto) {
     return this.authService.loginUser(email, password);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('forgot-password')
   async forgotPassword(@Body() { email }: { email: string }) {
     return this.authService.forgotPassword(email);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('verify-reset-code')
   async verifyResetCode(@Body() { email, resetCode }: { email: string; resetCode: string }) {
     return this.authService.verifyResetCode(email, resetCode);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('reset-password')
   async resetPassword(
@@ -162,10 +170,7 @@ export class AuthController {
   async googleLogin(
     @Body()
     dto: {
-      email: string;
-      displayName: string;
-      photoURL?: string;
-      uid: string;
+      idToken: string;
     },
   ) {
     return this.authService.syncGoogleUser(dto);

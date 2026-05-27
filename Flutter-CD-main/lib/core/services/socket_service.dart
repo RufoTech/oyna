@@ -35,14 +35,15 @@ class SocketService {
   Stream<Map<String, dynamic>> get onLayoutUpdate =>
       _layoutUpdateController.stream;
 
-  /// Connect to the Socket.io server with user info.
-  void connect({required String userId}) {
+  /// Connect to the Socket.io server with user info and JWT token.
+  void connect({required String userId, required String token}) {
     if (_isConnected) return;
 
     _socket = IO.io(
       AppConfig.baseUrl,
       IO.OptionBuilder()
           .setTransports(['websocket'])
+          .setAuth({'token': token})
           .setQuery({'role': 'user', 'userId': userId})
           .disableAutoConnect()
           .build(),

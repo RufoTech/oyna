@@ -1,15 +1,17 @@
-import { Controller, Get, Post, Body, Query, Patch, Param, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Patch, Param, ForbiddenException, Inject, forwardRef, UseGuards, Req, NotFoundException } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { ReservationsGateway } from './reservations.gateway';
 import { PushNotificationService } from './push-notification.service';
 import { Reservation } from './schemas/reservation.schema';
 import { VenuesService } from '../venues/venues.service';
 import { RedisService } from '../redis/redis.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 /**
  * Public endpoints for the Flutter mobile app.
- * No JWT guard — Firebase-authenticated users call these.
+ * Secured with JWT guard.
  */
+@UseGuards(JwtAuthGuard)
 @Controller('public/reservations')
 export class PublicReservationsController {
   constructor(
@@ -34,7 +36,7 @@ export class PublicReservationsController {
     const schedule = venue.operatingHours.schedule;
     if (!schedule) return true;
     
-    const daySchedule = schedule instanceof Map ? schedule.get(todayStr) : schedule[todayStr];
+    const daySchedule = typeof schedule.get === 'function' ? schedule.get(todayStr) : schedule[todayStr];
     
     if (!daySchedule || daySchedule.closed) return false;
     if (!daySchedule.open || !daySchedule.close) return true;
@@ -59,7 +61,11 @@ export class PublicReservationsController {
 
   /** POST /public/reservations — Create a new reservation */
   @Post()
-  async create(@Body() dto: Partial<Reservation> & { tableId?: string; tierId?: string }) {
+  async create(
+    @Body() dto: Partial<Reservation> & { tableId?: string; tierId?: string },
+    @Req() req: any,
+  ) {
+    dto.userId = req.user.sub;
     // Server-side guard: check venue is still accepting reservations
     if (dto.venueId) {
       const venue = await this.venuesService.findOnePublic(dto.venueId.toString());
@@ -160,21 +166,23 @@ export class PublicReservationsController {
     }
   }
 
-  /** GET /public/reservations/discovered?userId=xxx — Get user's discovered venues */
+  /** GET /public/reservations/discovered — Get user's discovered venues */
   @Get('discovered')
-  async findDiscoveredVenues(@Query('userId') userId: string) {
+  async findDiscoveredVenues(@Req() req: any) {
+    const userId = req.user.sub;
     const venueIds = await this.reservationsService.findDiscoveredVenueIds(userId);
     if (!venueIds.length) return [];
     return this.venuesService.findManyPublic(venueIds);
   }
 
-  /** GET /public/reservations?userId=xxx&page=1&limit=10 — Get user's own reservations */
+  /** GET /public/reservations — Get user's own reservations */
   @Get()
   findByUser(
-    @Query('userId') userId: string,
+    @Req() req: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
+    const userId = req.user.sub;
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
     return this.reservationsService.findByUser(userId, pageNum, limitNum);
@@ -182,9 +190,17 @@ export class PublicReservationsController {
 
   /** PATCH /public/reservations/:id/cancel — User cancels a reservation */
   @Patch(':id/cancel')
-  async cancelReservation(@Param('id') id: string) {
-    // First get the reservation to know the tableId
+  async cancelReservation(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user.sub;
+    // First get the reservation to know the tableId and verify ownership
     const existing = await this.reservationsService.findOne(id);
+    if (!existing) {
+      throw new NotFoundException('Rezervasiya tapılmadı.');
+    }
+
+    if (existing.userId !== userId) {
+      throw new ForbiddenException('Bu rezervasiyanı ləğv etməyə icazəniz yoxdur.');
+    }
 
     const updated = await this.reservationsService.updateStatus(
       id,
@@ -208,8 +224,9 @@ export class PublicReservationsController {
 
   /** POST /public/reservations/register-token — Register FCM device token */
   @Post('register-token')
-  async registerToken(@Body() body: { userId: string; fcmToken: string }) {
-    await this.pushNotificationService.registerToken(body.userId, body.fcmToken);
+  async registerToken(@Body() body: { fcmToken: string }, @Req() req: any) {
+    const userId = req.user.sub;
+    await this.pushNotificationService.registerToken(userId, body.fcmToken);
     return { success: true };
   }
 }

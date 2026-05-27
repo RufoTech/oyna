@@ -16,13 +16,16 @@ import { Types } from 'mongoose';
 import { VenuesService } from './venues.service';
 import { Venue } from './schemas/venue.schema';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { ReservationsGateway } from '../reservations/reservations.gateway';
 
 interface AuthRequest extends Request {
-  user: { sub: string; email: string; displayName?: string };
+  user: { sub: string; email: string; displayName?: string; role: string };
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPER_ADMIN')
 @Controller('venues')
 export class VenuesController {
   constructor(

@@ -6,12 +6,18 @@ import {
   UploadedFile,
   Param,
   BadRequestException,
+  UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard)
 @Controller('upload')
 export class UploadsController {
+  private readonly logger = new Logger(UploadsController.name);
+
   constructor() {
     console.log('--- UploadsController initialized ---');
   }
@@ -60,7 +66,8 @@ export class UploadsController {
 
       return { url: data.secure_url };
     } catch (error) {
-      throw new BadRequestException('Cloudinary upload failed: ' + error.message);
+      this.logger.error('Cloudinary upload failed:', error.stack || error.message);
+      throw new BadRequestException('Şəkil yüklənməsi zamanı xəta baş verdi.');
     }
   }
 }

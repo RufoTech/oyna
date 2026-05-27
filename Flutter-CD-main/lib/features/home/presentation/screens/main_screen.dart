@@ -37,8 +37,9 @@ class _MainScreenState extends ConsumerState<MainScreen> {
     try {
       final userData = await AuthService().getUserData();
       final userId = userData?['uid'] ?? userData?['sub'] ?? '';
-      if (userId.isNotEmpty) {
-        SocketService().connect(userId: userId);
+      final token = await AuthService().getToken();
+      if (userId.isNotEmpty && token != null) {
+        SocketService().connect(userId: userId, token: token);
 
         // Listen for real-time venue status changes and refresh data
         _venueUpdateSub = SocketService().onVenueUpdate.listen((data) {

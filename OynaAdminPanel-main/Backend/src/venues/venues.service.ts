@@ -132,7 +132,7 @@ export class VenuesService {
       const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
       const regex = new RegExp(escapedSearch, 'i');
       const results = await this.venueModel.find({
-        status: { $in: ['ACTIVE', 'DRAFT', 'PUBLISHED', 'INACTIVE'] },
+        status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] },
         $or: [
           { name: regex },
           { category: regex },
@@ -157,7 +157,7 @@ export class VenuesService {
     // Cache miss — MongoDB-dən ana siyahını çək
     this.logger.debug(`🔍 [CACHE MISS] ${cacheKey} → MongoDB query`);
     const venuesRaw = await this.venueModel.find({
-      status: { $in: ['ACTIVE', 'DRAFT', 'PUBLISHED', 'INACTIVE'] },
+      status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] },
     })
     .select('-specs')
     .limit(limit)
@@ -183,9 +183,9 @@ export class VenuesService {
 
     // 2. Cache miss — query MongoDB
     this.logger.debug(`🔍 [CACHE MISS] ${cacheKey} → MongoDB query`);
-    const venueRaw = await this.venueModel.findById(id).lean().exec();
+    const venueRaw = await this.venueModel.findOne({ _id: id, status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] } }).lean().exec();
     if (!venueRaw) {
-      throw new NotFoundException(`Məkan tapılmadı.`);
+      throw new NotFoundException(`Məkan tapılmadı və ya aktiv deyil.`);
     }
     const venue = this.formatVenueWithBranch(venueRaw);
 
@@ -198,7 +198,7 @@ export class VenuesService {
   async findManyPublic(ids: string[]): Promise<Venue[]> {
     if (!ids || ids.length === 0) return [];
     const results = await this.venueModel
-      .find({ _id: { $in: ids } })
+      .find({ _id: { $in: ids }, status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] } })
       .select('-specs')
       .lean()
       .exec();
@@ -226,7 +226,7 @@ export class VenuesService {
   }> {
     const skip = (page - 1) * limit;
     const match: any = {
-      status: { $in: ['ACTIVE', 'DRAFT', 'PUBLISHED', 'INACTIVE'] },
+      status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] },
     };
 
     // Add search filter if provided

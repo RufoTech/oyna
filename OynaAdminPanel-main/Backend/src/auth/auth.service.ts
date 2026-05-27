@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
+import * as admin from 'firebase-admin';
 import { User, UserDocument } from './schemas/user.schema';
 import { BrevoService } from './brevo.service';
 
@@ -45,6 +46,18 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  // ── Helper: Enforce strong password complexity ──
+  private validatePasswordStrength(password: string) {
+    if (!password || password.length < 8) {
+      throw new BadRequestException('Şifrə ən azı 8 simvoldan ibarət olmalıdır.');
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9\W]/.test(password)) {
+      throw new BadRequestException(
+        'Şifrədə ən azı bir böyük hərf, bir kiçik hərf və bir rəqəm və ya xüsusi simvol olmalıdır.',
+      );
+    }
+  }
+
   // ── Helper: Generate 6-digit OTP ──
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
@@ -60,6 +73,7 @@ export class AuthService implements OnModuleInit {
     displayName: string;
   }) {
     const email = dto.email.trim().toLowerCase();
+    this.validatePasswordStrength(dto.password);
 
     // Check if user already exists
     const existing = await this.userModel.findOne({ email }).exec();
@@ -231,7 +245,8 @@ export class AuthService implements OnModuleInit {
       .exec();
 
     if (!user) {
-      throw new BadRequestException('Bu email ilə hesab tapılmadı.');
+      // Prevent user enumeration by returning a generic success response
+      return { message: 'Sıfırlama kodu e-poçtunuza göndərildi.' };
     }
 
     const resetCode = this.generateOtp();
@@ -302,6 +317,7 @@ export class AuthService implements OnModuleInit {
     }
 
     // Update password
+    this.validatePasswordStrength(newPassword);
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     user.resetCode = undefined;
     user.resetCodeExpiresAt = undefined;
@@ -347,6 +363,7 @@ export class AuthService implements OnModuleInit {
       throw new ForbiddenException('Bu email ilə istifadəçi artıq mövcuddur.');
     }
 
+    this.validatePasswordStrength(dto.password);
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const createdUser = await this.userModel.create({
       email: dto.email.trim().toLowerCase(),
@@ -413,6 +430,7 @@ export class AuthService implements OnModuleInit {
   }
 
   async resetPassword(id: string, pass: string) {
+    this.validatePasswordStrength(pass);
     const passwordHash = await bcrypt.hash(pass, 10);
     const result = await this.userModel
       .findOneAndUpdate(
@@ -430,28 +448,57 @@ export class AuthService implements OnModuleInit {
     return { success: true };
   }
 
-  async syncGoogleUser(dto: {
-    email: string;
-    displayName: string;
-    photoURL?: string;
-    uid: string;
-  }) {
-    let user = await this.userModel.findOne({ email: dto.email }).exec();
+  async syncGoogleUser(dto: { idToken: string }) {
+    let email: string;
+    let displayName: string;
+    let photoURL: string | undefined;
+    let uid: string;
+
+    if (admin.apps.length > 0) {
+      try {
+        const decodedToken = await admin.auth().verifyIdToken(dto.idToken);
+        email = decodedToken.email || '';
+        displayName = decodedToken.name || '';
+        photoURL = decodedToken.picture;
+        uid = decodedToken.uid;
+      } catch (err) {
+        throw new UnauthorizedException('Google ID tokeni etibarsızdır: ' + err.message);
+      }
+    } else {
+      // Dev mode fallback ONLY if NOT production
+      if (process.env.NODE_ENV === 'production') {
+        throw new UnauthorizedException('Firebase Admin SDK başlatılmayıb, Google login mümkün deyil.');
+      }
+      this.logger.warn(
+        '⚠️ Firebase Admin SDK is NOT initialized. Faking Google token verification (only allowed in development).',
+      );
+
+      // Assume idToken is email in dev
+      if (dto.idToken && dto.idToken.includes('@')) {
+        email = dto.idToken;
+        displayName = dto.idToken.split('@')[0];
+        uid = 'dev-uid-' + displayName;
+      } else {
+        throw new UnauthorizedException('Firebase doğrulama açarları çatışmır.');
+      }
+    }
+
+    let user = await this.userModel.findOne({ email }).exec();
 
     if (user) {
       // Update existing user details
-      user.displayName = dto.displayName;
-      user.photoURL = dto.photoURL;
-      user.uid = dto.uid;
+      user.displayName = displayName;
+      user.photoURL = photoURL;
+      user.uid = uid;
       user.status = 'ACTIVE';
       await user.save();
     } else {
       // Create new user
       user = await this.userModel.create({
-        email: dto.email,
-        displayName: dto.displayName,
-        photoURL: dto.photoURL,
-        uid: dto.uid,
+        email,
+        displayName,
+        photoURL,
+        uid,
         role: 'USER',
         status: 'ACTIVE',
       });

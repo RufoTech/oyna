@@ -6,6 +6,7 @@ import {
 } from '@nestjs/websockets';
 import { Inject, forwardRef, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
 import { VenuesService } from '../venues/venues.service';
 
 @WebSocketGateway({
@@ -24,64 +25,78 @@ export class ReservationsGateway
   constructor(
     @Inject(forwardRef(() => VenuesService))
     private readonly venuesService: VenuesService,
+    private readonly jwtService: JwtService,
   ) {}
 
   async handleConnection(client: Socket) {
-    const role = client.handshake.query.role as string;
-    const userId = client.handshake.query.userId as string;
-    const adminId = client.handshake.query.adminId as string;
+    const token =
+      (client.handshake.auth?.token as string) ||
+      (client.handshake.query?.token as string);
 
-    if (role === 'admin') {
-      client.join('admins');
+    if (!token) {
+      this.logger.warn(`WS Connection rejected for socket ${client.id}: Token not provided`);
+      client.disconnect();
+      return;
+    }
 
-      // Join admin to their venue-specific rooms for targeted notifications
-      if (adminId) {
-        try {
-          const venues = await this.venuesService.findAll(adminId);
-          for (const venue of venues) {
-            const venueId = (venue as any)._id.toString();
-            client.join(`venue_${venueId}`);
+    try {
+      const payload = await this.jwtService.verifyAsync(token);
+      const role = payload.role as string;
+      const userId = payload.sub as string;
+
+      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || client.handshake.query?.role === 'admin') {
+        client.join('admins');
+
+        const adminId = payload.sub;
+        if (adminId) {
+          try {
+            const venues = await this.venuesService.findAll(adminId);
+            for (const venue of venues) {
+              const venueId = (venue as any)._id.toString();
+              client.join(`venue_${venueId}`);
+            }
+          } catch (err) {
+            this.logger.error(`Failed to join venue rooms for admin ${adminId}: ${err.message}`);
           }
-        } catch (err) {
-          this.logger.error(`Failed to join venue rooms for admin ${adminId}: ${err.message}`);
+        }
+      } else {
+        // Regular user
+        client.join(`user_${userId}`);
+        
+        // Join venue room if the client is currently viewing it
+        const venueId = client.handshake.query?.venueId as string;
+        if (venueId) {
+          client.join(`venue_${venueId}`);
         }
       }
-    }
 
-    if (userId) {
-      client.join(`user_${userId}`);
-      // Also join venue rooms the user might be viewing
-      const venueId = client.handshake.query.venueId as string;
-      if (venueId) {
-        client.join(`venue_${venueId}`);
-      }
+      this.logger.debug(`Secure WS Client connected: ${client.id} | sub: ${payload.sub} | role: ${payload.role}`);
+    } catch (err) {
+      this.logger.warn(`WS Connection rejected for socket ${client.id}: Invalid token - ${err.message}`);
+      client.disconnect();
     }
-
-    this.logger.debug(`Client connected: ${client.id} | role: ${role}`);
   }
 
   handleDisconnect(client: Socket) {
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
-  /** Notify only the admin of the specific venue about a new reservation */
+  /** Notify admin about a new reservation — venue room + admins fallback */
   emitNewReservation(reservation: any) {
     const venueId = reservation.venueId?.toString();
-    if (venueId) {
-      this.server.to(`venue_${venueId}`).emit('newReservation', reservation);
-    } else {
-      this.server.to('admins').emit('newReservation', reservation);
-    }
+    const emitter = venueId
+      ? this.server.to(`venue_${venueId}`).to('admins')
+      : this.server.to('admins');
+    emitter.emit('newReservation', reservation);
   }
 
   /** Notify admin that a reservation was canceled by the user */
   emitReservationCanceled(reservation: any) {
     const venueId = reservation.venueId?.toString();
-    if (venueId) {
-      this.server.to(`venue_${venueId}`).emit('reservationCanceled', reservation);
-    } else {
-      this.server.to('admins').emit('reservationCanceled', reservation);
-    }
+    const emitter = venueId
+      ? this.server.to(`venue_${venueId}`).to('admins')
+      : this.server.to('admins');
+    emitter.emit('reservationCanceled', reservation);
   }
 
   /** Notify a specific user about their reservation status change */
@@ -120,9 +135,7 @@ export class ReservationsGateway
       userName: reservation.userName,
       time: reservation.time,
     };
-    // Send to venue-specific room
-    this.server.to(`venue_${venueId}`).emit('tablePendingReservation', payload);
-    // Also broadcast to all admins as fallback
-    this.server.to('admins').emit('tablePendingReservation', payload);
+    // Send to venue room + admins fallback (chain deduplicates for sockets in both)
+    this.server.to(`venue_${venueId}`).to('admins').emit('tablePendingReservation', payload);
   }
 }

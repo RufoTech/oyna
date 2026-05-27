@@ -17,12 +17,15 @@ import { ReservationsGateway } from './reservations.gateway';
 import { PushNotificationService } from './push-notification.service';
 import { VenuesService } from '../venues/venues.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../auth/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 
 interface AuthRequest extends Request {
-  user: { sub: string; email: string; displayName?: string };
+  user: { sub: string; email: string; displayName?: string; role: string };
 }
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPER_ADMIN')
 @Controller('reservations')
 export class ReservationsController {
   constructor(
@@ -70,16 +73,30 @@ export class ReservationsController {
   async updateStatus(
     @Param('id') id: string,
     @Body() body: { status: 'accepted' | 'rejected' | 'canceled'; rejectReason?: string },
+    @Req() req: AuthRequest,
   ) {
+    const adminId = req.user.sub;
+    const originalReservation = await this.reservationsService.findOne(id);
+    if (!originalReservation) {
+      throw new ForbiddenException('Rezervasiya tapılmadı.');
+    }
+
+    // Check if admin has access to the reservation's venue
+    if (originalReservation.venueId) {
+      const venues = await this.venuesService.findAll(adminId);
+      const hasVenue = venues.some((v: any) => v._id.toString() === originalReservation.venueId.toString());
+      if (!hasVenue) {
+        throw new ForbiddenException('Bu məkana daxil olmağa hüququnuz yoxdur.');
+      }
+    }
+
     let finalStatus: any = body.status;
     let graceDeadline: Date | undefined;
-    let originalReservation;
 
     if (body.status === 'accepted') {
       finalStatus = 'awaiting_arrival';
       try {
-        originalReservation = await this.reservationsService.findOne(id);
-        if (originalReservation && originalReservation.venueId) {
+        if (originalReservation.venueId) {
           const venue = await this.venuesService.findOnePublic(originalReservation.venueId.toString());
           const gracePeriod = venue?.bookingRules?.gracePeriod ?? 30; // Default 30 min as requested
           graceDeadline = this.reservationsService.calculateGraceDeadline(
@@ -89,7 +106,7 @@ export class ReservationsController {
           );
         }
       } catch (e) {
-        console.error('Error fetching original reservation or venue for grace period', e);
+        console.error('Error fetching venue for grace period', e);
       }
     }
 
