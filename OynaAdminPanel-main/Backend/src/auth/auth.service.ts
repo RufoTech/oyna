@@ -473,12 +473,22 @@ export class AuthService implements OnModuleInit {
         '⚠️ Firebase Admin SDK is NOT initialized. Faking Google token verification (only allowed in development).',
       );
 
-      // Assume idToken is email in dev
-      if (dto.idToken && dto.idToken.includes('@')) {
-        email = dto.idToken;
-        displayName = dto.idToken.split('@')[0];
-        uid = 'dev-uid-' + displayName;
-      } else {
+      try {
+        const parts = dto.idToken ? dto.idToken.split('.') : [];
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+          email = payload.email || '';
+          displayName = payload.name || '';
+          photoURL = payload.picture;
+          uid = payload.sub || payload.uid || '';
+        } else if (dto.idToken && dto.idToken.includes('@')) {
+          email = dto.idToken;
+          displayName = dto.idToken.split('@')[0];
+          uid = 'dev-uid-' + displayName;
+        } else {
+          throw new Error('Invalid token');
+        }
+      } catch (err) {
         throw new UnauthorizedException('Firebase doğrulama açarları çatışmır.');
       }
     }

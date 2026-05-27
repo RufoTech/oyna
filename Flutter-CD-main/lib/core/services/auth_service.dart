@@ -96,11 +96,9 @@ class AuthService {
   /// Syncs the Firebase user with our NestJS/MongoDB backend.
   Future<void> syncUserWithBackend(User user) async {
     try {
+      final idToken = await user.getIdToken();
       final response = await DioClient().dio.post('/auth/google', data: {
-        'email': user.email,
-        'displayName': user.displayName ?? 'User',
-        'photoURL': user.photoURL,
-        'uid': user.uid,
+        'idToken': idToken,
       });
 
       if (response.statusCode == 200 || response.statusCode == 201) {
