@@ -9,6 +9,7 @@ import { useGetVenueByIdQuery, useCreateVenueMutation, useUpdateVenueMutation, u
 import { uploadImageToCloudinary } from '../lib/cloudinary';
 import { setStep1, setCurrentVenueId, resetVenueForm, loadVenueForEdit } from '../store/slices/venueFormSlice';
 import { formatImageUrl } from '../utils/imageUrl';
+import { validateImageFile } from '../utils/fileValidation';
 
 const AddVenue = ({ onNavigate }) => {
   const { t } = useTranslation();
@@ -124,6 +125,11 @@ const AddVenue = ({ onNavigate }) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (!validateImageFile(file)) {
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.addEventListener('load', () => {
       setCropperImage(reader.result);
@@ -144,7 +150,9 @@ const AddVenue = ({ onNavigate }) => {
       setCropperImage(null);
       toast.success(t('addVenue.logoSuccess'));
     } catch (error) {
-      toast.error(t('addVenue.logoError'));
+      if (!error?.isValidationError) {
+        toast.error(t('addVenue.logoError'));
+      }
     } finally {
       setIsUploadingLogo(false);
     }
@@ -180,19 +188,7 @@ const AddVenue = ({ onNavigate }) => {
 
   return (
     <>
-      <style>{`
-        h1, h2, h3, .font-headline { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined {
-          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-          display: inline-block;
-          line-height: 1;
-          vertical-align: middle;
-        }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #e0e2e6; border-radius: 10px; }
-        .dark :-webkit-scrollbar-thumb { background: #334155; }
-      `}</style>
+
 
       <div className="px-12 max-w-6xl mx-auto">
             <div className="mb-10 flex items-end justify-between">
@@ -426,7 +422,6 @@ const AddVenue = ({ onNavigate }) => {
                           }}
                         >
                           <MapPicker 
-                            key={`${coords.lat}-${coords.lng}-readonly`}
                             defaultLat={coords.lat} 
                             defaultLng={coords.lng} 
                             readOnly={true}
@@ -506,7 +501,6 @@ const AddVenue = ({ onNavigate }) => {
           
           <div className="flex-1 relative z-0">
             <MapPicker 
-              key={`${tempCoords.lat}-${tempCoords.lng}-editable`}
               defaultLat={tempCoords.lat} 
               defaultLng={tempCoords.lng} 
               onChange={(lat, lng) => setTempCoords({ lat, lng })}

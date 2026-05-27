@@ -14,6 +14,7 @@ import { PiOfficeChairFill } from "react-icons/pi";
 import { uploadImageToCloudinary } from '../lib/cloudinary';
 import { useTranslation } from 'react-i18next';
 import { formatImageUrl } from '../utils/imageUrl';
+import { validateImageFile } from '../utils/fileValidation';
 
 
 const AddSpecs = () => {
@@ -186,8 +187,10 @@ const AddSpecs = () => {
   const uploadToCloudinary = async (file) => {
     try {
       return await uploadImageToCloudinary(file, 'venues');
-    } catch {
-      toast.error(t('addSpecs.uploadError'));
+    } catch (err) {
+      if (!err?.isValidationError) {
+        toast.error(t('addSpecs.uploadError'));
+      }
       return null;
     }
   };
@@ -195,6 +198,11 @@ const AddSpecs = () => {
   const handleTierHeroUpload = async (tierId, e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (!validateImageFile(file)) {
+      e.target.value = '';
+      return;
+    }
 
     setIsUploadingMap(prev => ({ ...prev, [tierId]: true }));
     const url = await uploadToCloudinary(file);

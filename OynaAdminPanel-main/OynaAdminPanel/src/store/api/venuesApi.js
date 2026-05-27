@@ -1,16 +1,11 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { createApi } from '@reduxjs/toolkit/query/react';
+import { createBaseQuery } from './baseQuery';
 
-const venuesBaseQuery = fetchBaseQuery({
-  baseUrl: `${import.meta.env.VITE_API_URL}/venues`,
-  prepareHeaders: (headers) => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-    headers.set('Content-Type', 'application/json');
-    return headers;
-  },
-});
+const venuesBaseQuery = createBaseQuery('/venues');
+
+// Memory cache to track which venues lack the dedicated /layout endpoint,
+// avoiding duplicate 404 network requests and fallback API calls.
+const missingLayoutVenues = new Set();
 
 const isMissingLayoutEndpoint = (result) => {
   const message = result?.error?.data?.message;
@@ -122,8 +117,16 @@ export const venuesApi = createApi({
     // GET /venues/:id/layout
     getVenueLayout: builder.query({
       async queryFn(venueId, api, extraOptions) {
+        if (missingLayoutVenues.has(venueId)) {
+          const venueResult = await venuesBaseQuery(`/${venueId}`, api, extraOptions);
+          if (venueResult.error) return venueResult;
+          return { data: venueResult.data?.layout || { items: [] } };
+        }
+
         const layoutResult = await venuesBaseQuery(`/${venueId}/layout`, api, extraOptions);
         if (!isMissingLayoutEndpoint(layoutResult)) return layoutResult;
+
+        missingLayoutVenues.add(venueId);
 
         const venueResult = await venuesBaseQuery(`/${venueId}`, api, extraOptions);
         if (venueResult.error) return venueResult;
@@ -135,6 +138,20 @@ export const venuesApi = createApi({
     // PATCH /venues/:id/layout
     updateVenueLayout: builder.mutation({
       async queryFn({ venueId, layout }, api, extraOptions) {
+        if (missingLayoutVenues.has(venueId)) {
+          const venueResult = await venuesBaseQuery(
+            {
+              url: `/${venueId}`,
+              method: 'PATCH',
+              body: { layout },
+            },
+            api,
+            extraOptions
+          );
+          if (venueResult.error) return venueResult;
+          return { data: venueResult.data?.layout || layout };
+        }
+
         const layoutResult = await venuesBaseQuery(
           {
             url: `/${venueId}/layout`,
@@ -146,6 +163,8 @@ export const venuesApi = createApi({
         );
 
         if (!isMissingLayoutEndpoint(layoutResult)) return layoutResult;
+
+        missingLayoutVenues.add(venueId);
 
         const venueResult = await venuesBaseQuery(
           {

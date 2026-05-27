@@ -108,6 +108,20 @@ class SocketService {
     _socket!.connect();
   }
 
+  /// Join a venue room to receive live layout/table updates.
+  void joinVenue(String venueId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('joinVenue', venueId);
+    debugPrint('SocketService: Joined venue room venue_$venueId');
+  }
+
+  /// Leave a venue room when exiting the floor plan screen.
+  void leaveVenue(String venueId) {
+    if (!_isConnected || _socket == null) return;
+    _socket!.emit('leaveVenue', venueId);
+    debugPrint('SocketService: Left venue room venue_$venueId');
+  }
+
   /// Disconnect from the Socket.io server.
   void disconnect() {
     _socket?.disconnect();

@@ -9,7 +9,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
   });
   
   const [language, setLanguage] = useState(() => {
-    return i18n.language || 'az';
+    const currentLang = i18n.language || 'az';
+    return currentLang.split('-')[0].toLowerCase();
   });
 
   useEffect(() => {

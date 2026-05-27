@@ -1,28 +1,31 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { setCredentials, logout } from './store/slices/authSlice';
-import Login from './pages/Login';
-import SuperAdminLogin from './pages/SuperAdminLogin';
-import SuperAdmin from './pages/SuperAdmin';
-import Dashboard from './pages/Dashboard';
-import Bookings from './pages/Bookings';
-import AddVenue from './pages/AddVenue';
-import Venues from './pages/Venues';
-import MediaPricing from './pages/MediaPricing';
-import CalendarAvailability from './pages/CalendarAvailability';
-import EditVenue from './pages/EditVenue';
-import AddSpecs from './pages/AddSpecs';
-import Simulation from './pages/Simulation';
-import Food from './pages/Food';
-import AddFood from './pages/AddFood';
-import EditFood from './pages/EditFood';
-import Help from './pages/Help';
 import DashboardLayout from './components/DashboardLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+
+// Lazy load pages for huge initial bundle reduction
+const Login = lazy(() => import('./pages/Login'));
+const SuperAdminLogin = lazy(() => import('./pages/SuperAdminLogin'));
+const SuperAdmin = lazy(() => import('./pages/SuperAdmin'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Bookings = lazy(() => import('./pages/Bookings'));
+const AddVenue = lazy(() => import('./pages/AddVenue'));
+const Venues = lazy(() => import('./pages/Venues'));
+const MediaPricing = lazy(() => import('./pages/MediaPricing'));
+const CalendarAvailability = lazy(() => import('./pages/CalendarAvailability'));
+const EditVenue = lazy(() => import('./pages/EditVenue'));
+const AddSpecs = lazy(() => import('./pages/AddSpecs'));
+const Simulation = lazy(() => import('./pages/Simulation'));
+const Food = lazy(() => import('./pages/Food'));
+const AddFood = lazy(() => import('./pages/AddFood'));
+const EditFood = lazy(() => import('./pages/EditFood'));
+const Help = lazy(() => import('./pages/Help'));
 
 function App() {
   const dispatch = useDispatch();
@@ -61,53 +64,63 @@ function App() {
     navigate(isSuperAdmin ? '/superadmin/login' : '/login');
   };
 
+  const lazyFallback = (
+    <div className="flex h-screen w-screen items-center justify-center bg-slate-50 dark:bg-slate-950 transition-colors">
+      <span className="material-symbols-outlined animate-spin text-4xl text-[#0058bc]">progress_activity</span>
+    </div>
+  );
+
   return (
-    <>
+    <ErrorBoundary>
       <ToastContainer position="top-right" autoClose={3000} />
-      <Routes>
-        {/* Auth Routes */}
-        <Route path="/login" element={<Login onLogin={handleLogin} onSwitchToSuperAdmin={() => navigate('/superadmin/login')} />} />
-        <Route path="/superadmin/login" element={<SuperAdminLogin onLogin={handleLogin} onSwitchToAdmin={() => navigate('/login')} />} />
+      <Suspense fallback={lazyFallback}>
+        <Routes>
+          {/* Auth Routes */}
+          <Route path="/login" element={<Login onLogin={handleLogin} onSwitchToSuperAdmin={() => navigate('/superadmin/login')} />} />
+          <Route path="/superadmin/login" element={<SuperAdminLogin onLogin={handleLogin} onSwitchToAdmin={() => navigate('/login')} />} />
 
-        {/* Super Admin Routes */}
-        <Route 
-          path="/superadmin" 
-          element={
-            <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
-              <SuperAdmin user={user} onLogout={handleLogout} />
-            </ProtectedRoute>
-          } 
-        />
+          {/* Super Admin Routes */}
+          <Route 
+            path="/superadmin" 
+            element={
+              <ProtectedRoute allowedRoles={['SUPER_ADMIN']}>
+                <SuperAdmin user={user} onLogout={handleLogout} />
+              </ProtectedRoute>
+            } 
+          />
 
-        {/* Regular Admin Routes */}
-        <Route 
-          path="/*" 
-          element={
-            <ProtectedRoute allowedRoles={['ADMIN']}>
-              <DashboardLayout user={user} onLogout={handleLogout}>
-                <Routes>
-                  <Route path="/" element={<Dashboard user={user} onLogout={handleLogout} onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/dashboard" element={<Dashboard user={user} onLogout={handleLogout} onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/venues" element={<Venues onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/addVenue/:id?" element={<AddVenue onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/editVenue/:id" element={<EditVenueWrapper navigate={navigate} />} />
-                  <Route path="/mediaPricing/:id?" element={<MediaPricing onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/calendarAvailability/:id?" element={<CalendarAvailability onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/addSpecs/:id?" element={<AddSpecs onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/simulation" element={<Simulation />} />
-                  <Route path="/food" element={<Food onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/addFood/:id?" element={<AddFood onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
-                  <Route path="/editFood/:id" element={<EditFoodWrapper navigate={navigate} />} />
-                  <Route path="/bookings" element={<Bookings />} />
-                  <Route path="/help" element={<Help />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </DashboardLayout>
-            </ProtectedRoute>
-          } 
-        />
-      </Routes>
-    </>
+          {/* Regular Admin Routes */}
+          <Route 
+            path="/*" 
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN']}>
+                <DashboardLayout user={user} onLogout={handleLogout}>
+                  <Suspense fallback={lazyFallback}>
+                    <Routes>
+                      <Route path="/" element={<Dashboard user={user} onLogout={handleLogout} onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/dashboard" element={<Dashboard user={user} onLogout={handleLogout} onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/venues" element={<Venues onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/addVenue/:id?" element={<AddVenue onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/editVenue/:id" element={<EditVenueWrapper navigate={navigate} />} />
+                      <Route path="/mediaPricing/:id?" element={<MediaPricing onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/calendarAvailability/:id?" element={<CalendarAvailability onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/addSpecs/:id?" element={<AddSpecs onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/simulation" element={<Simulation />} />
+                      <Route path="/food" element={<Food onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/addFood/:id?" element={<AddFood onNavigate={(page, id) => navigate(id ? `/${page}/${id}` : `/${page}`)} />} />
+                      <Route path="/editFood/:id" element={<EditFoodWrapper navigate={navigate} />} />
+                      <Route path="/bookings" element={<Bookings />} />
+                      <Route path="/help" element={<Help />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                  </Suspense>
+                </DashboardLayout>
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 

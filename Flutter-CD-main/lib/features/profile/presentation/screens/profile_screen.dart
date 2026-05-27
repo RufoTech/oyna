@@ -345,7 +345,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.surfaceContainerLowest,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Row(
@@ -364,7 +364,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(dialogContext).pop(),
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -378,9 +378,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ),
           ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.of(context).pop();
-              await AuthService().signOut();
+            onPressed: () {
+              Navigator.of(dialogContext).pop();
+              // Çıkış işlemini arka planda başlatıyoruz (await etmiyoruz ki arayüz kilitlenmesin)
+              AuthService().signOut();
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),

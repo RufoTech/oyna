@@ -1,20 +1,9 @@
-import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import { createApi } from '@reduxjs/toolkit/query/react';
+import { createBaseQuery } from './baseQuery';
 
 export const authApi = createApi({
   reducerPath: 'authApi',
-  baseQuery: fetchBaseQuery({
-    baseUrl: `${import.meta.env.VITE_API_URL}/auth`,
-    prepareHeaders: (headers) => {
-      headers.set('Content-Type', 'application/json');
-
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
-      }
-
-      return headers;
-    },
-  }),
+  baseQuery: createBaseQuery('/auth'),
   tagTypes: ['Admins'],
   endpoints: (builder) => ({
     loginAdmin: builder.mutation({
@@ -33,6 +22,19 @@ export const authApi = createApi({
     }),
     getAdmins: builder.query({
       query: () => '/admins',
+      transformResponse: (response) => {
+        if (!Array.isArray(response)) return response;
+        return response.map((admin) => ({
+          ...admin,
+          createdAt: admin.createdAt 
+            ? new Date(admin.createdAt).toLocaleDateString('az-AZ', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+              })
+            : '-',
+        }));
+      },
       providesTags: ['Admins'],
     }),
     createAdmin: builder.mutation({

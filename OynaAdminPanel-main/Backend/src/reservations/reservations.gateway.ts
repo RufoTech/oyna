@@ -3,6 +3,9 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
+  ConnectedSocket,
+  MessageBody,
 } from '@nestjs/websockets';
 import { Inject, forwardRef, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
@@ -81,6 +84,28 @@ export class ReservationsGateway
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
+  @SubscribeMessage('joinVenue')
+  handleJoinVenue(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() venueId: string,
+  ) {
+    if (venueId) {
+      client.join(`venue_${venueId}`);
+      this.logger.debug(`Client ${client.id} joined room: venue_${venueId}`);
+    }
+  }
+
+  @SubscribeMessage('leaveVenue')
+  handleLeaveVenue(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() venueId: string,
+  ) {
+    if (venueId) {
+      client.leave(`venue_${venueId}`);
+      this.logger.debug(`Client ${client.id} left room: venue_${venueId}`);
+    }
+  }
+
   /** Notify admin about a new reservation — venue room + admins fallback */
   emitNewReservation(reservation: any) {
     const venueId = reservation.venueId?.toString();
@@ -106,10 +131,9 @@ export class ReservationsGateway
       .emit('reservationStatusUpdate', reservation);
   }
 
-  /** Broadcast venue status changes to users viewing that venue */
+  /** Broadcast venue status changes to all connected users */
   emitVenueUpdate(venue: any) {
-    const venueId = venue._id?.toString();
-    this.server.to(`venue_${venueId}`).emit('venueStatusUpdate', {
+    this.server.emit('venueStatusUpdate', {
       _id: venue._id,
       status: venue.status,
       temporarilyClosed: venue.temporarilyClosed ?? false,

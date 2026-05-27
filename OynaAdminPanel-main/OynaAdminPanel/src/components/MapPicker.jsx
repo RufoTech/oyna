@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, Marker, TileLayer, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -15,8 +15,24 @@ const defaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = defaultIcon;
 
+// Helper component that reactively updates map center/view without remounting the entire Leaflet instance
+const ChangeMapView = ({ center }) => {
+  const map = useMap();
+  useEffect(() => {
+    if (center && center[0] && center[1]) {
+      map.setView(center, map.getZoom());
+    }
+  }, [center, map]);
+  return null;
+};
+
 const LocationMarker = ({ initialPosition, onChange }) => {
   const [position, setPosition] = useState(initialPosition);
+
+  // Sync internal position state when initialPosition changes (e.g. from parent inputs)
+  useEffect(() => {
+    setPosition(initialPosition);
+  }, [initialPosition]);
 
   useMapEvents({
     click(event) {
@@ -46,7 +62,12 @@ const MapPicker = ({ defaultLat = 40.4093, defaultLng = 49.8671, onChange, readO
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        {readOnly ? <Marker position={[defaultLat, defaultLng]} /> : <LocationMarker initialPosition={initialPosition} onChange={onChange} />}
+        <ChangeMapView center={[defaultLat, defaultLng]} />
+        {readOnly ? (
+          <Marker position={[defaultLat, defaultLng]} />
+        ) : (
+          <LocationMarker initialPosition={initialPosition} onChange={onChange} />
+        )}
       </MapContainer>
     </div>
   );

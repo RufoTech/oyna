@@ -3,6 +3,23 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 
+const NAV_ITEMS = [
+  { id: 'dashboard', labelKey: 'sidebar.dashboard', icon: 'dashboard', path: '/dashboard' },
+  {
+    id: 'venues',
+    labelKey: 'sidebar.venues',
+    icon: 'location_on',
+    path: '/venues',
+    activePaths: ['/venues', '/addVenue', '/editVenue', '/mediaPricing', '/calendarAvailability'],
+  },
+  { id: 'addSpecs', labelKey: 'sidebar.addSpecs', icon: 'computer', path: '/addSpecs' },
+  { id: 'simulation', labelKey: 'sidebar.simulation', icon: 'view_quilt', path: '/simulation' },
+  { id: 'food', labelKey: 'sidebar.food', icon: 'restaurant_menu', path: '/food', activePaths: ['/food', '/addFood', '/editFood'] },
+  { id: 'bookings', labelKey: 'sidebar.bookings', icon: 'event_available', path: '/bookings' },
+];
+
+const SETTINGS_ITEM = { labelKey: 'sidebar.settings', icon: 'settings' };
+
 const Sidebar = ({ user, onLogout, isOpen, setIsOpen }) => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -15,31 +32,12 @@ const Sidebar = ({ user, onLogout, isOpen, setIsOpen }) => {
   const inactiveClass =
     'flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors duration-200 font-manrope text-sm font-medium tracking-tight rounded-xl group cursor-pointer';
 
-  const navItems = [
-    { id: 'dashboard', label: t('sidebar.dashboard'), icon: 'dashboard', path: '/dashboard' },
-    {
-      id: 'venues',
-      label: t('sidebar.venues'),
-      icon: 'location_on',
-      path: '/venues',
-      activePaths: ['/venues', '/addVenue', '/editVenue', '/mediaPricing', '/calendarAvailability'],
-    },
-    { id: 'addSpecs', label: t('sidebar.addSpecs'), icon: 'computer', path: '/addSpecs' },
-    { id: 'simulation', label: t('sidebar.simulation'), icon: 'view_quilt', path: '/simulation' },
-    { id: 'food', label: t('sidebar.food'), icon: 'restaurant_menu', path: '/food', activePaths: ['/food', '/addFood', '/editFood'] },
-    { id: 'bookings', label: t('sidebar.bookings'), icon: 'event_available', path: '/bookings' },
-  ];
-
   const isActive = (item) => {
     if (item.activePaths) {
       return item.activePaths.some(p => pathname.startsWith(p)) || pathname === item.path;
     }
     return pathname === item.path || (item.id === 'dashboard' && pathname === '/');
   };
-
-  const placeholderItems = [
-    { label: t('sidebar.settings'), icon: 'settings' },
-  ];
 
   return (
     <aside
@@ -61,7 +59,7 @@ const Sidebar = ({ user, onLogout, isOpen, setIsOpen }) => {
       </div>
 
       <nav className={`flex-1 space-y-1 ${isOpen ? 'px-4' : 'px-2'}`}>
-        {navItems.map((item) => {
+        {NAV_ITEMS.map((item) => {
           const active = isActive(item);
           return (
             <div key={item.id} onClick={() => navigate(item.path)} className={active ? activeClass : inactiveClass}>
@@ -74,28 +72,23 @@ const Sidebar = ({ user, onLogout, isOpen, setIsOpen }) => {
               <span
                 className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isOpen ? 'opacity-100' : 'w-0 opacity-0 hidden'}`}
               >
-                {item.label}
+                {t(item.labelKey)}
               </span>
             </div>
           );
         })}
 
-        {placeholderItems.map((item) => (
-          <div 
-            key={item.label} 
-            className={inactiveClass} 
-            onClick={() => {
-              if (item.label === t('sidebar.settings')) setIsSettingsOpen(true);
-            }}
+        <div 
+          className={inactiveClass} 
+          onClick={() => setIsSettingsOpen(true)}
+        >
+          <span className="material-symbols-outlined shrink-0 group-hover:text-primary">{SETTINGS_ITEM.icon}</span>
+          <span
+            className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isOpen ? 'opacity-100' : 'w-0 opacity-0 hidden'}`}
           >
-            <span className="material-symbols-outlined shrink-0 group-hover:text-primary">{item.icon}</span>
-            <span
-              className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${isOpen ? 'opacity-100' : 'w-0 opacity-0 hidden'}`}
-            >
-              {item.label}
-            </span>
-          </div>
-        ))}
+            {t(SETTINGS_ITEM.labelKey)}
+          </span>
+        </div>
       </nav>
 
       <div className={`mt-auto space-y-1 ${isOpen ? 'px-4' : 'px-2'}`}>

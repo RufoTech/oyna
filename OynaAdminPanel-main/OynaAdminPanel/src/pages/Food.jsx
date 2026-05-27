@@ -35,14 +35,7 @@ const Food = ({ onNavigate }) => {
 
   return (
     <>
-      <style>{`
-        .material-symbols-outlined {
-          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .cloud-shadow {
-          box-shadow: 0px 20px 40px rgba(25, 28, 31, 0.06);
-        }
-      `}</style>
+
 
       {deleteModalFood && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">

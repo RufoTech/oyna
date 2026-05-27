@@ -21,6 +21,8 @@ const SuperAdmin = ({ user, onLogout }) => {
   const [deleteModal, setDeleteModal] = useState(null); // stores admin to delete
   const [resetModal, setResetModal] = useState(null); // stores admin to reset
   const [newPass, setNewPass] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
 
   const handleCreateAdmin = async (event) => {
     event.preventDefault();
@@ -41,6 +43,7 @@ const SuperAdmin = ({ user, onLogout }) => {
       setDisplayName('');
       setEmail('');
       setPassword('');
+      setShowPassword(false);
     } catch (error) {
       toast.error(error?.data?.message || 'Admin yaradılan zaman xəta baş verdi.');
     }
@@ -64,6 +67,7 @@ const SuperAdmin = ({ user, onLogout }) => {
       toast.success('Şifrə yeniləndi.');
       setResetModal(null);
       setNewPass('');
+      setShowNewPass(false);
     } catch (err) {
       toast.error(err?.data?.message || 'Şifrə sıfırlanarkən xəta baş verdi.');
     }
@@ -120,17 +124,26 @@ const SuperAdmin = ({ user, onLogout }) => {
               </div>
             </div>
             <div className="space-y-4">
-              <input
-                type="text"
-                autoFocus
-                placeholder="Yeni şifrə..."
-                value={newPass}
-                onChange={(e) => setNewPass(e.target.value)}
-                className="w-full px-5 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none outline-none focus:ring-2 focus:ring-primary/20 font-bold text-on-surface dark:text-white"
-              />
+              <div className="relative">
+                <input
+                  type={showNewPass ? 'text' : 'password'}
+                  autoFocus
+                  placeholder="Yeni şifrə..."
+                  value={newPass}
+                  onChange={(e) => setNewPass(e.target.value)}
+                  className="w-full pl-5 pr-12 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none outline-none focus:ring-2 focus:ring-primary/20 font-bold text-on-surface dark:text-white"
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setShowNewPass((prev) => !prev)} 
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <span className="material-symbols-outlined">{showNewPass ? 'visibility_off' : 'visibility'}</span>
+                </button>
+              </div>
               <div className="flex gap-3">
                 <button 
-                  onClick={() => { setResetModal(null); setNewPass(''); }}
+                  onClick={() => { setResetModal(null); setNewPass(''); setShowNewPass(false); }}
                   className="flex-1 py-3.5 rounded-xl border border-slate-200 dark:border-slate-800 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer"
                 >
                   Ləğv et
@@ -184,7 +197,22 @@ const SuperAdmin = ({ user, onLogout }) => {
               </div>
               <div>
                 <label className="block text-xs font-bold uppercase tracking-widest text-slate-500 ml-1 mb-2">Şifrə</label>
-                <input value={password} onChange={(event) => setPassword(event.target.value)} type="text" className="w-full px-4 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none outline-none focus:ring-2 focus:ring-primary/20 text-slate-900 dark:text-white" placeholder="Minimum 6+ simvol" />
+                <div className="relative">
+                  <input 
+                    value={password} 
+                    onChange={(event) => setPassword(event.target.value)} 
+                    type={showPassword ? 'text' : 'password'} 
+                    className="w-full pl-4 pr-12 py-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none outline-none focus:ring-2 focus:ring-primary/20 text-slate-900 dark:text-white" 
+                    placeholder="Minimum 6+ simvol" 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={() => setShowPassword((prev) => !prev)} 
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  >
+                    <span className="material-symbols-outlined">{showPassword ? 'visibility_off' : 'visibility'}</span>
+                  </button>
+                </div>
               </div>
 
               <button type="submit" disabled={isCreating} className="w-full py-4 rounded-xl bg-gradient-to-r from-primary to-primary-container text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-70 cursor-pointer">
@@ -235,7 +263,7 @@ const SuperAdmin = ({ user, onLogout }) => {
                           </span>
                         </td>
                         <td className="py-4 text-slate-500 text-sm">
-                          {admin.createdAt ? new Date(admin.createdAt).toLocaleDateString('az-AZ') : '-'}
+                          {admin.createdAt}
                         </td>
                         <td className="py-4 text-right">
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -104,11 +104,14 @@ const DashboardLayout = ({ user, onLogout, children }) => {
       }
     });
 
-    socket.on('disconnect', () => {
-      console.log('🔌 Global socket disconnected');
-    });
-
     return () => {
+      socket.off('connect');
+      socket.off('newReservation');
+      socket.off('reservationCanceled');
+      socket.off('venueLayoutUpdate');
+      socket.off('tablePendingReservation');
+      socket.off('venueStatusUpdate');
+      socket.off('disconnect');
       socket.disconnect();
     };
   }, [dispatch, user, t]);

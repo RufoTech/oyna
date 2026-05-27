@@ -7,6 +7,7 @@ import { uploadImageToCloudinary } from '../lib/cloudinary';
 import { setStep2, resetVenueForm, loadVenueForEdit } from '../store/slices/venueFormSlice';
 import { useTranslation } from 'react-i18next';
 import { formatImageUrl } from '../utils/imageUrl';
+import { validateImageFile } from '../utils/fileValidation';
 
 const MediaPricing = ({ onNavigate }) => {
   const { t } = useTranslation();
@@ -28,24 +29,43 @@ const MediaPricing = ({ onNavigate }) => {
   const [heroImages, setHeroImages] = useState(
     venueForm.heroImage ? (Array.isArray(venueForm.heroImage) ? venueForm.heroImage : [venueForm.heroImage]) : [],
   );
-  const [gallery, setGallery] = useState(venueForm.gallery);
+  const [gallery, setGallery] = useState(venueForm.gallery || []);
   const [isUploadingHero, setIsUploadingHero] = useState(false);
   const [isUploadingGallery, setIsUploadingGallery] = useState(false);
-  const [basePrice, setBasePrice] = useState(venueForm.basePrice);
+  const [basePrice, setBasePrice] = useState(venueForm.basePrice || 0);
+
+  // Sync local state when venueForm redux state changes (e.g. after asynchronous fetch)
+  useEffect(() => {
+    setHeroImages(
+      venueForm.heroImage ? (Array.isArray(venueForm.heroImage) ? venueForm.heroImage : [venueForm.heroImage]) : []
+    );
+    setGallery(venueForm.gallery || []);
+    setBasePrice(venueForm.basePrice || 0);
+  }, [venueForm]);
 
   const handleHeroUpload = async (event) => {
     const files = Array.from(event.target.files);
     if (!files.length) return;
 
+    // Filter files based on validation
+    const validFiles = files.filter(file => validateImageFile(file));
+    if (!validFiles.length) {
+      event.target.value = '';
+      return;
+    }
+
     setIsUploadingHero(true);
-    for (const file of files) {
+    for (const file of validFiles) {
       try {
         const url = await uploadImageToCloudinary(file, 'venues');
         setHeroImages((prev) => [...prev, url]);
-      } catch {
-        toast.error(t('media.uploadError'));
+      } catch (err) {
+        if (!err?.isValidationError) {
+          toast.error(t('media.uploadError'));
+        }
       }
     }
+    event.target.value = ''; // Reset input
     setIsUploadingHero(false);
   };
 
@@ -53,15 +73,25 @@ const MediaPricing = ({ onNavigate }) => {
     const files = Array.from(event.target.files);
     if (!files.length) return;
 
+    // Filter files based on validation
+    const validFiles = files.filter(file => validateImageFile(file));
+    if (!validFiles.length) {
+      event.target.value = '';
+      return;
+    }
+
     setIsUploadingGallery(true);
-    for (const file of files) {
+    for (const file of validFiles) {
       try {
         const url = await uploadImageToCloudinary(file, 'venues');
         setGallery((prev) => [...prev, url]);
-      } catch {
-        toast.error(t('media.uploadError'));
+      } catch (err) {
+        if (!err?.isValidationError) {
+          toast.error(t('media.uploadError'));
+        }
       }
     }
+    event.target.value = ''; // Reset input
     setIsUploadingGallery(false);
   };
 
@@ -121,25 +151,7 @@ const MediaPricing = ({ onNavigate }) => {
 
   return (
     <>
-      <style>{`
-        body { font-family: 'Inter', sans-serif; margin: 0; padding: 0; }
-        h1, h2, h3 { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined {
-          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .amenity-details {
-          max-height: 0;
-          overflow: hidden;
-          transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
-          opacity: 0;
-        }
-        input:checked + div + .amenity-details {
-          max-height: 200px;
-          opacity: 1;
-          margin-top: 1rem;
-        }
-      `}</style>
+
 
       <div className="px-10">
         <div className="mb-10 flex justify-between items-end">

@@ -755,16 +755,22 @@ const Simulation = () => {
         /* noop */
       }
 
-      const element = event.target;
-      const previousVisibility = element.style.visibility;
-      element.style.visibility = 'hidden';
-      const underPointer = document.elementFromPoint(event.clientX, event.clientY);
-      element.style.visibility = previousVisibility;
+      if (canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const upX = (event.clientX - rect.left) / zoom;
+        const upY = (event.clientY - rect.top) / zoom;
 
-      const targetNode = underPointer?.closest('[data-item-id]');
-      if (targetNode) {
-        const targetId = targetNode.getAttribute('data-item-id');
-        if (targetId && targetId !== dragLine.fromId) {
+        // Perform pure coordinate hit-test on items instead of DOM visibility-toggle elementFromPoint
+        const targetItem = items.find(
+          (item) =>
+            upX >= item.x &&
+            upX <= item.x + item.w &&
+            upY >= item.y &&
+            upY <= item.y + item.h
+        );
+
+        if (targetItem && targetItem.id !== dragLine.fromId) {
+          const targetId = targetItem.id;
           const next = items.map((item) =>
             item.id === dragLine.fromId && !(item.connectedTo || []).includes(targetId)
               ? { ...item, connectedTo: [...(item.connectedTo || []), targetId] }

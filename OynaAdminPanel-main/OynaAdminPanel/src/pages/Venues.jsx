@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 import { formatImageUrl } from '../utils/imageUrl';
 
-const BlockedUsersModal = ({ venue, onClose }) => {
+const BlockedUsersModal = React.memo(({ venue, onClose }) => {
   const { t } = useTranslation();
   const { data: blockedUsers, isLoading } = useGetBlockedUsersQuery(venue._id);
   const [unblockUser] = useBlockUserForVenueMutation();
@@ -56,7 +56,7 @@ const BlockedUsersModal = ({ venue, onClose }) => {
       </div>
     </div>
   );
-};
+});
 
 const Venues = ({ onNavigate }) => {
   const { t } = useTranslation();
@@ -151,11 +151,7 @@ const Venues = ({ onNavigate }) => {
 
   return (
     <>
-      <style>{`
-        .font-headline { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
-        .cloud-shadow { box-shadow: 0px 20px 40px rgba(25, 28, 31, 0.06); }
-      `}</style>
+
 
       {tempCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { uploadImageToCloudinary } from '../lib/cloudinary';
 import { useGetFoodsQuery } from '../store/api/foodApi';
 import { formatImageUrl } from '../utils/imageUrl';
+import { validateImageFile } from '../utils/fileValidation';
 
 const defaultCategoryOptions = ['Burger', 'Fast Food', 'Drink', 'Pizza', 'Dessert'];
 
@@ -57,13 +58,20 @@ const FoodForm = ({ mode = 'create', initialValues, isSubmitting = false, onNavi
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!validateImageFile(file)) {
+      e.target.value = '';
+      return;
+    }
+
     setIsUploadingImage(true);
     try {
       const imageUrl = await uploadImageToCloudinary(file, 'foods');
       updateField('image', imageUrl);
       toast.success(t('food.toasts.uploadSuccess'));
-    } catch {
-      toast.error(t('food.toasts.uploadError'));
+    } catch (err) {
+      if (!err?.isValidationError) {
+        toast.error(t('food.toasts.uploadError'));
+      }
     }
 
     setIsUploadingImage(false);
@@ -86,25 +94,7 @@ const FoodForm = ({ mode = 'create', initialValues, isSubmitting = false, onNavi
 
   return (
     <>
-      <style>{`
-        .material-symbols-outlined {
-          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        .cloud-shadow {
-          box-shadow: 0px 20px 40px rgba(25, 28, 31, 0.06);
-        }
-        /* Custom scrollbar for category list */
-        .category-scroll::-webkit-scrollbar {
-          width: 4px;
-        }
-        .category-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .category-scroll::-webkit-scrollbar-thumb {
-          background: rgba(var(--primary-rgb), 0.1);
-          border-radius: 10px;
-        }
-      `}</style>
+
 
       <div className="px-8 max-w-6xl mx-auto space-y-8">
         <div className="flex items-end justify-between gap-6">

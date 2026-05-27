@@ -30,6 +30,9 @@ class _FloorPlanScreenState extends State<FloorPlanScreen> {
   void initState() {
     super.initState();
     _fetchLayout();
+    
+    // Join venue socket room for live table updates
+    SocketService().joinVenue(widget.venue.id);
 
     _layoutSub = SocketService().onLayoutUpdate.listen((data) {
       if (data['venueId'] == widget.venue.id) {
@@ -60,6 +63,8 @@ class _FloorPlanScreenState extends State<FloorPlanScreen> {
   @override
   void dispose() {
     _layoutSub?.cancel();
+    // Leave venue socket room
+    SocketService().leaveVenue(widget.venue.id);
     _transformationController.dispose();
     super.dispose();
   }

@@ -130,13 +130,45 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _performGoogleLogin() async {
-    final userCred = await AuthService().signInWithGoogle();
-    if (userCred != null && mounted) {
-      // StreamBuilder handles the UI root switch, but let's safely pop context cache just in case
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
-        (route) => false,
-      );
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+    });
+
+    try {
+      final userCred = await AuthService().signInWithGoogle();
+      if (userCred != null && mounted) {
+        // StreamBuilder handles the UI root switch, but let's safely pop context cache just in case
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      debugPrint("Error during Google Login: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  String _getLoadingText(BuildContext context) {
+    try {
+      final locale = Localizations.localeOf(context).languageCode;
+      switch (locale) {
+        case 'az':
+          return 'Giriş edilir...';
+        case 'ru':
+          return 'Вход в систему...';
+        case 'en':
+        default:
+          return 'Signing in...';
+      }
+    } catch (_) {
+      return 'Signing in...';
     }
   }
 
@@ -184,6 +216,48 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+
+          if (_isLoading)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.35),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceContainerLowest,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _getLoadingText(context),
+                            style: AppTypography.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.onSurface,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

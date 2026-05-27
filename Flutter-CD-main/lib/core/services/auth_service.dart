@@ -153,10 +153,20 @@ class AuthService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_tokenKey);
+    } catch (e) {
+      debugPrint("Error removing token: $e");
+    }
+
+    try {
       await GoogleSignIn.instance.disconnect();
+    } catch (e) {
+      debugPrint("Error during Google Sign Out: $e");
+    }
+
+    try {
       await _auth.signOut();
     } catch (e) {
-      debugPrint("Error during Sign Out: $e");
+      debugPrint("Error during Firebase Sign Out: $e");
     }
   }
 }

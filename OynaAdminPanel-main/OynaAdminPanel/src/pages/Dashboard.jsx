@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGetDashboardStatsQuery } from '../store/api/dashboardApi';
 import { useLazyExportReservationsQuery } from '../store/api/reservationsApi';
-import * as XLSX from 'xlsx';
+// xlsx is loaded dynamically on export to keep initial bundle small
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
@@ -51,6 +51,8 @@ const Dashboard = () => {
         [t('dashboard.export.headers.createdAt')]: r.createdAt ? new Date(r.createdAt).toLocaleString(i18n.language === 'az' ? 'az-AZ' : i18n.language === 'ru' ? 'ru-RU' : 'en-US') : '',
       }));
 
+      // Load xlsx on demand (~300KB saved from initial bundle)
+      const XLSX = await import('xlsx');
       const ws = XLSX.utils.json_to_sheet(rows);
 
       // Column widths
