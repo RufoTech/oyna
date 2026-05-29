@@ -7,9 +7,11 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import * as mongoose from 'mongoose';
 import { toObjectId } from '../common/object-id.util';
-import { Venue, VenueDocument } from './schemas/venue.schema';
+import { Venue, VenueDocument, GeoLocation, Specs, Layout, LayoutItem } from './schemas/venue.schema';
 import { RedisService } from '../redis/redis.service';
+import { UpdateSpecsDto, UpdateLayoutDto } from './dto/venues.dto';
 
 // ═══════════════════════════════════════════════
 // Cache Key Constants & TTL
@@ -33,8 +35,15 @@ export class VenuesService {
     private readonly redisService: RedisService,
   ) {}
 
-  private normalizeLocation(location?: any) {
-    if (!location) return location;
+  private normalizeLocation(location?: {
+    type?: string;
+    coordinates?: number[];
+    lng?: number;
+    lat?: number;
+    city?: string;
+    address?: string;
+  } | null) {
+    if (!location) return undefined;
 
     if (
       Array.isArray(location.coordinates) &&
@@ -60,17 +69,28 @@ export class VenuesService {
       };
     }
 
-    return location;
+    if (location.type === 'Point' && Array.isArray(location.coordinates)) {
+      return {
+        type: 'Point',
+        coordinates: location.coordinates,
+        city: location.city || '',
+        address: location.address || '',
+      };
+    }
+
+    return undefined;
   }
 
   /** Helper to append branch name to venue name for display purposes */
-  private formatVenueWithBranch(venue: any): any {
+  private formatVenueWithBranch<T extends Venue>(venue: T): T {
     if (!venue) return venue;
-    const v = venue.toObject ? venue.toObject() : venue;
+    const v = 'toObject' in venue && typeof (venue as { toObject?: unknown }).toObject === 'function'
+      ? (venue as { toObject: () => T }).toObject()
+      : { ...venue };
     if (v.branches && v.branches.length > 0 && v.branches[0]) {
       v.name = `${v.name} - ${v.branches[0]}`;
     }
-    return v;
+    return v as T;
   }
 
   private normalizeVenuePayload(payload: Partial<Venue>): Partial<Venue> {
@@ -104,7 +124,7 @@ export class VenuesService {
   }
 
   // Get all venues for the list filtered by adminId
-  async findAll(adminId: string): Promise<any[]> {
+  async findAll(adminId: string): Promise<Venue[]> {
     const venues = await this.venueModel.find({ adminId: toObjectId(adminId) }).lean().exec();
     return venues.map(v => this.formatVenueWithBranch(v));
   }
@@ -118,7 +138,7 @@ export class VenuesService {
     if (!venue) {
       throw new NotFoundException(`Məkan tapılmadı və ya icazəniz yoxdur.`);
     }
-    return venue as any;
+    return venue as unknown as Venue;
   }
 
   // ═══════════════════════════════════════════════
@@ -225,7 +245,7 @@ export class VenuesService {
     hasMore: boolean;
   }> {
     const skip = (page - 1) * limit;
-    const match: any = {
+    const match: mongoose.QueryFilter<Venue> = {
       status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] },
     };
 
@@ -248,7 +268,7 @@ export class VenuesService {
       // and ideally the frontend can filter or we can refine this later.
     }
 
-    const pipeline: any[] = [];
+    const pipeline: mongoose.PipelineStage[] = [];
 
     // 1. Geo-Near Stage (Must be first if sorting by distance)
     if (sortBy === 'distance' && lat !== undefined && lng !== undefined) {
@@ -287,7 +307,7 @@ export class VenuesService {
     const dataRaw = result.data || [];
     const total = result.totalCount?.[0]?.count || 0;
 
-    const data = dataRaw.map((v: any) => this.formatVenueWithBranch(v));
+    const data = dataRaw.map((v: Venue) => this.formatVenueWithBranch(v));
 
     return {
       data,
@@ -322,7 +342,7 @@ export class VenuesService {
     return updatedVenue;
   }
 
-  async remove(id: string, adminId: string): Promise<any> {
+  async remove(id: string, adminId: string): Promise<VenueDocument> {
     const result = await this.venueModel
       .findOneAndDelete({ _id: id, adminId: toObjectId(adminId) })
       .exec();
@@ -378,7 +398,7 @@ export class VenuesService {
   // SPECS METHODS (Step 4 — Tiers & Packages)
   // ═══════════════════════════════════════════════
 
-  async getSpecs(id: string, adminId: string): Promise<any> {
+  async getSpecs(id: string, adminId: string): Promise<Specs> {
     const venue = await this.venueModel
       .findOne({ _id: id, adminId: toObjectId(adminId) })
       .select('specs')
@@ -396,7 +416,7 @@ export class VenuesService {
     );
   }
 
-  async updateSpecs(id: string, specsDto: any, adminId: string): Promise<any> {
+  async updateSpecs(id: string, specsDto: UpdateSpecsDto, adminId: string): Promise<Specs> {
     const updatedVenue = await this.venueModel
       .findOneAndUpdate(
         { _id: id, adminId: toObjectId(adminId) },
@@ -413,14 +433,14 @@ export class VenuesService {
     // ✅ Invalidate detail cache for this venue
     await this.redisService.del(CACHE_KEYS.DETAIL(id));
 
-    return updatedVenue.specs;
+    return updatedVenue.specs as Specs;
   }
 
   // ═══════════════════════════════════════════════
   // LAYOUT METHODS (Floor-plan simulator)
   // ═══════════════════════════════════════════════
 
-  async getLayout(id: string, adminId: string): Promise<any> {
+  async getLayout(id: string, adminId: string): Promise<Layout> {
     const venue = await this.venueModel
       .findOne({ _id: id, adminId: toObjectId(adminId) })
       .select('layout')
@@ -432,7 +452,7 @@ export class VenuesService {
   }
 
   /** Get layout for public use (Flutter floor plan) — no admin auth required */
-  async getPublicLayout(id: string): Promise<any> {
+  async getPublicLayout(id: string): Promise<Layout> {
     const cacheKey = CACHE_KEYS.DETAIL(id);
     try {
       const cached = await this.redisService.get<Venue>(cacheKey);
@@ -451,7 +471,7 @@ export class VenuesService {
     if (!venue) {
       throw new NotFoundException('Məkan tapılmadı.');
     }
-    return (venue as any).layout || { items: [] };
+    return venue.layout || { items: [] };
   }
 
   /** Update a single table's status inside venue layout */
@@ -491,7 +511,7 @@ export class VenuesService {
       .exec();
     if (!venue) return {};
 
-    const items: any[] = (venue as any).layout?.items || [];
+    const items = venue.layout?.items || [];
     const counts: Record<string, number> = {};
 
     for (const item of items) {
@@ -512,7 +532,7 @@ export class VenuesService {
   }
 
   /** Find a random available table for a given tierId or tierTitle */
-  async findRandomAvailableTable(venueId: string, tierId: string, tierTitle?: string): Promise<any | null> {
+  async findRandomAvailableTable(venueId: string, tierId: string, tierTitle?: string): Promise<LayoutItem | null> {
     const venue = await this.venueModel
       .findById(venueId)
       .select('layout')
@@ -520,11 +540,11 @@ export class VenuesService {
       .exec();
     if (!venue) return null;
 
-    const items: any[] = (venue as any).layout?.items || [];
+    const items = venue.layout?.items || [];
     
     this.logger.debug(`findRandomAvailableTable called with tierId="${tierId}", tierTitle="${tierTitle}"`);
 
-    const matchesTier = (itemTierId: string) => {
+    const matchesTier = (itemTierId?: string) => {
       if (!itemTierId) return false;
       if (itemTierId === tierId) return true;
       if (tierTitle && itemTierId === tierTitle) return true;
@@ -545,7 +565,7 @@ export class VenuesService {
     return availables[randomIndex];
   }
 
-  async updateLayout(id: string, layoutDto: any, adminId: string): Promise<any> {
+  async updateLayout(id: string, layoutDto: UpdateLayoutDto, adminId: string): Promise<Layout> {
     const updatedVenue = await this.venueModel
       .findOneAndUpdate(
         { _id: id, adminId: toObjectId(adminId) },
@@ -569,7 +589,7 @@ export class VenuesService {
     // ✅ Invalidate detail cache (layout is part of venue document)
     await this.redisService.del(CACHE_KEYS.DETAIL(id));
 
-    return updatedVenue.layout;
+    return updatedVenue.layout as Layout;
   }
 
   // ═══════════════════════════════════════════════

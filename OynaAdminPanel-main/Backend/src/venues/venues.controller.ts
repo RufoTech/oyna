@@ -20,7 +20,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { ReservationsGateway } from '../reservations/reservations.gateway';
 import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
-import { BlockUserDto } from './dto/venues.dto';
+import { BlockUserDto, CreateVenueDto, UpdateVenueDto, UpdateSpecsDto, UpdateLayoutDto } from './dto/venues.dto';
 
 interface AuthRequest extends Request {
   user: { sub: string; email: string; displayName?: string; role: string };
@@ -37,7 +37,7 @@ export class VenuesController {
   ) {}
 
   @Post()
-  create(@Body() dto: Partial<Venue>, @Req() req: AuthRequest) {
+  create(@Body() dto: CreateVenueDto, @Req() req: AuthRequest) {
     return this.venuesService.create({
       ...dto,
       adminId: new Types.ObjectId(req.user.sub),
@@ -62,7 +62,7 @@ export class VenuesController {
   @Patch(':id')
   async update(
     @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: Partial<Venue>,
+    @Body() dto: UpdateVenueDto,
     @Req() req: AuthRequest,
   ) {
     const updatedVenue = await this.venuesService.update(id, dto, req.user.sub);
@@ -114,7 +114,7 @@ export class VenuesController {
   @Patch(':id/specs')
   updateSpecs(
     @Param('id', ParseObjectIdPipe) id: string,
-    @Body() specsDto: any,
+    @Body() specsDto: UpdateSpecsDto,
     @Req() req: AuthRequest,
   ) {
     return this.venuesService.updateSpecs(id, specsDto, req.user.sub);
@@ -132,7 +132,7 @@ export class VenuesController {
   @Patch(':id/layout')
   async updateLayout(
     @Param('id', ParseObjectIdPipe) id: string,
-    @Body() layoutDto: any,
+    @Body() layoutDto: UpdateLayoutDto,
     @Req() req: AuthRequest,
   ) {
     const updatedLayout = await this.venuesService.updateLayout(id, layoutDto, req.user.sub);

@@ -20,7 +20,7 @@ export class DashboardService {
   async getDashboardStats(adminIdStr: string) {
     const cacheKey = `dashboard:stats:${adminIdStr}`;
     try {
-      const cached = await this.redisService.get<any>(cacheKey);
+      const cached = await this.redisService.get<unknown>(cacheKey);
       if (cached) {
         return cached;
       }
@@ -118,7 +118,7 @@ export class DashboardService {
     }
 
     // 6. Format recent bookings
-    const formattedBookings = recentBookings.map((r: any) => ({
+    const formattedBookings = (recentBookings as unknown as (Reservation & { _id: Types.ObjectId })[]).map((r) => ({
       _id: r._id,
       userName: r.userName,
       venueName: r.venueName,

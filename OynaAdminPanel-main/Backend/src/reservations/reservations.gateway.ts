@@ -10,7 +10,12 @@ import {
 import { Inject, forwardRef, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { VenuesService } from '../venues/venues.service';
+import { User, UserDocument } from '../auth/schemas/user.schema';
+import { Reservation } from './schemas/reservation.schema';
+import { Venue, Layout } from '../venues/schemas/venue.schema';
 
 @WebSocketGateway({
   cors: {
@@ -29,33 +34,49 @@ export class ReservationsGateway
     @Inject(forwardRef(() => VenuesService))
     private readonly venuesService: VenuesService,
     private readonly jwtService: JwtService,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
   ) {}
 
   async handleConnection(client: Socket) {
-    const token =
-      (client.handshake.auth?.token as string) ||
-      (client.handshake.query?.token as string);
+    let token = client.handshake.auth?.token as string;
+    if (token && token.startsWith('Bearer ')) {
+      token = token.split(' ')[1];
+    }
 
     if (!token) {
-      this.logger.warn(`WS Connection rejected for socket ${client.id}: Token not provided`);
+      this.logger.warn(`WS Connection rejected for socket ${client.id}: Token not provided in handshake auth`);
       client.disconnect();
       return;
     }
 
     try {
       const payload = await this.jwtService.verifyAsync(token);
-      const role = payload.role as string;
       const userId = payload.sub as string;
 
-      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || client.handshake.query?.role === 'admin') {
+      // Dynamic privilege validation: check role and status in DB
+      const dbUser = await this.userModel
+        .findById(userId)
+        .select('status role')
+        .lean()
+        .exec();
+
+      if (!dbUser || dbUser.status !== 'ACTIVE') {
+        this.logger.warn(`WS Connection rejected for user ${userId}: User is not active or not found`);
+        client.disconnect();
+        return;
+      }
+
+      const role = dbUser.role;
+
+      if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
         client.join('admins');
 
-        const adminId = payload.sub;
+        const adminId = userId;
         if (adminId) {
           try {
             const venues = await this.venuesService.findAll(adminId);
             for (const venue of venues) {
-              const venueId = (venue as any)._id.toString();
+              const venueId = (venue as Venue & { _id: Types.ObjectId })._id.toString();
               client.join(`venue_${venueId}`);
             }
           } catch (err) {
@@ -73,7 +94,7 @@ export class ReservationsGateway
         }
       }
 
-      this.logger.debug(`Secure WS Client connected: ${client.id} | sub: ${payload.sub} | role: ${payload.role}`);
+      this.logger.debug(`Secure WS Client connected: ${client.id} | sub: ${userId} | role: ${role}`);
     } catch (err) {
       this.logger.warn(`WS Connection rejected for socket ${client.id}: Invalid token - ${err.message}`);
       client.disconnect();
@@ -107,7 +128,7 @@ export class ReservationsGateway
   }
 
   /** Notify admin about a new reservation — venue room + admins fallback */
-  emitNewReservation(reservation: any) {
+  emitNewReservation(reservation: Reservation) {
     const venueId = reservation.venueId?.toString();
     const emitter = venueId
       ? this.server.to(`venue_${venueId}`).to('admins')
@@ -116,7 +137,7 @@ export class ReservationsGateway
   }
 
   /** Notify admin that a reservation was canceled by the user */
-  emitReservationCanceled(reservation: any) {
+  emitReservationCanceled(reservation: Reservation) {
     const venueId = reservation.venueId?.toString();
     const emitter = venueId
       ? this.server.to(`venue_${venueId}`).to('admins')
@@ -125,14 +146,14 @@ export class ReservationsGateway
   }
 
   /** Notify a specific user about their reservation status change */
-  emitStatusUpdate(userId: string, reservation: any) {
+  emitStatusUpdate(userId: string, reservation: Reservation) {
     this.server
       .to(`user_${userId}`)
       .emit('reservationStatusUpdate', reservation);
   }
 
   /** Broadcast venue status changes to all connected users */
-  emitVenueUpdate(venue: any) {
+  emitVenueUpdate(venue: Venue & { _id?: unknown }) {
     this.server.emit('venueStatusUpdate', {
       _id: venue._id,
       status: venue.status,
@@ -142,7 +163,7 @@ export class ReservationsGateway
   }
 
   /** Broadcast venue layout (tables) updates to users viewing that venue */
-  emitVenueLayoutUpdate(venueId: string, layout: any) {
+  emitVenueLayoutUpdate(venueId: string, layout: Layout) {
     this.server.to(`venue_${venueId}`).emit('venueLayoutUpdate', {
       venueId,
       layout,
@@ -150,7 +171,7 @@ export class ReservationsGateway
   }
 
   /** Notify admin that a specific table received a pending reservation — triggers "!" animation */
-  emitTablePending(venueId: string, tableId: string, reservation: any) {
+  emitTablePending(venueId: string, tableId: string, reservation: Reservation & { _id?: Types.ObjectId }) {
     const payload = {
       venueId,
       tableId,

@@ -1,11 +1,18 @@
 import { Controller, Get, Post, Body, Query, Patch, Param, ForbiddenException, Inject, forwardRef, UseGuards, Req, NotFoundException } from '@nestjs/common';
+import { Request } from 'express';
 import { ReservationsService } from './reservations.service';
 import { ReservationsGateway } from './reservations.gateway';
 import { PushNotificationService } from './push-notification.service';
-import { Reservation } from './schemas/reservation.schema';
+import { CreateReservationDto, RegisterFcmTokenDto } from './dto/reservations.dto';
 import { VenuesService } from '../venues/venues.service';
+import { Venue, LayoutItem, OperatingScheduleDay } from '../venues/schemas/venue.schema';
+import { Reservation } from './schemas/reservation.schema';
 import { RedisService } from '../redis/redis.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+
+interface AuthRequest extends Request {
+  user: { sub: string; email: string; displayName?: string; role: string };
+}
 
 /**
  * Public endpoints for the Flutter mobile app.
@@ -23,7 +30,7 @@ export class PublicReservationsController {
     private readonly redisService: RedisService,
   ) {}
 
-  private isVenueOpenByClock(venue: any): boolean {
+  private isVenueOpenByClock(venue: Venue): boolean {
     if (!venue.operatingHours) return true;
     if (venue.operatingHours.is24_7) return true;
 
@@ -36,7 +43,9 @@ export class PublicReservationsController {
     const schedule = venue.operatingHours.schedule;
     if (!schedule) return true;
     
-    const daySchedule = typeof schedule.get === 'function' ? schedule.get(todayStr) : schedule[todayStr];
+    const daySchedule = typeof (schedule as { get?: (k: string) => unknown }).get === 'function'
+      ? (schedule as unknown as { get: (k: string) => OperatingScheduleDay }).get(todayStr)
+      : schedule[todayStr];
     
     if (!daySchedule || daySchedule.closed) return false;
     if (!daySchedule.open || !daySchedule.close) return true;
@@ -62,8 +71,8 @@ export class PublicReservationsController {
   /** POST /public/reservations — Create a new reservation */
   @Post()
   async create(
-    @Body() dto: Partial<Reservation> & { tableId?: string; tierId?: string },
-    @Req() req: any,
+    @Body() dto: CreateReservationDto,
+    @Req() req: AuthRequest,
   ) {
     dto.userId = req.user.sub;
     // Server-side guard: check venue is still accepting reservations
@@ -100,7 +109,7 @@ export class PublicReservationsController {
         acquiredLockKey = lockKey;
 
         const layout = await this.venuesService.getPublicLayout(venueId);
-        const table = (layout?.items || []).find((item: any) => item.id === dto.tableId);
+        const table = (layout?.items || []).find((item: LayoutItem) => item.id === dto.tableId);
         
         if (!table) {
           throw new ForbiddenException('TABLE_NOT_FOUND');
@@ -112,7 +121,7 @@ export class PublicReservationsController {
         dto.tableName = table.name;
       } else if (dto.tierId && venueId) {
         // YOL 2: User xidmət düyməsindən seçib — random boş masa tap (preventing race condition via retries)
-        let lockedTable: any = null;
+        let lockedTable: LayoutItem | null = null;
         const maxRetries = 3;
 
         for (let i = 0; i < maxRetries; i++) {
@@ -139,9 +148,9 @@ export class PublicReservationsController {
       }
       
       // tierId-ni reservation-a saxlamağa ehtiyac yoxdur, silinir
-      delete (dto as any).tierId;
+      delete (dto as CreateReservationDto & { tierId?: string }).tierId;
 
-      const reservation = await this.reservationsService.create(dto);
+      const reservation = await this.reservationsService.create(dto as unknown as Partial<Reservation>);
 
       // Sync table status to 'reserved' in venue layout
       if (reservation.tableId && venueId) {
@@ -168,7 +177,7 @@ export class PublicReservationsController {
 
   /** GET /public/reservations/discovered — Get user's discovered venues */
   @Get('discovered')
-  async findDiscoveredVenues(@Req() req: any) {
+  async findDiscoveredVenues(@Req() req: AuthRequest) {
     const userId = req.user.sub;
     const venueIds = await this.reservationsService.findDiscoveredVenueIds(userId);
     if (!venueIds.length) return [];
@@ -178,7 +187,7 @@ export class PublicReservationsController {
   /** GET /public/reservations — Get user's own reservations */
   @Get()
   findByUser(
-    @Req() req: any,
+    @Req() req: AuthRequest,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -190,7 +199,7 @@ export class PublicReservationsController {
 
   /** PATCH /public/reservations/:id/cancel — User cancels a reservation */
   @Patch(':id/cancel')
-  async cancelReservation(@Param('id') id: string, @Req() req: any) {
+  async cancelReservation(@Param('id') id: string, @Req() req: AuthRequest) {
     const userId = req.user.sub;
     // First get the reservation to know the tableId and verify ownership
     const existing = await this.reservationsService.findOne(id);
@@ -224,7 +233,7 @@ export class PublicReservationsController {
 
   /** POST /public/reservations/register-token — Register FCM device token */
   @Post('register-token')
-  async registerToken(@Body() body: { fcmToken: string }, @Req() req: any) {
+  async registerToken(@Body() body: RegisterFcmTokenDto, @Req() req: AuthRequest) {
     const userId = req.user.sub;
     await this.pushNotificationService.registerToken(userId, body.fcmToken);
     return { success: true };

@@ -49,7 +49,7 @@ export class AutoRejectTask {
       'Vaxtında gəlmədiyiniz üçün ləğv olundu';
 
     // 2. Bulk update — single MongoDB operation per status type
-    const bulkOps: Promise<any>[] = [];
+    const bulkOps: Promise<unknown>[] = [];
 
     if (expiredPending.length > 0) {
       const pendingIds = expiredPending.map((r) => r._id);
@@ -87,14 +87,18 @@ export class AutoRejectTask {
       venueTableMap.get(vId)!.add(r.tableId);
     }
 
-    // Sync table statuses and emit layout updates per venue (not per reservation)
-    for (const [venueId, tableIds] of venueTableMap) {
-      for (const tableId of tableIds) {
-        await this.venuesService.syncTableStatus(venueId, tableId, 'rejected');
-      }
+    // Sync table statuses and emit layout updates per venue in parallel (non-blocking)
+    const venueSyncOps = Array.from(venueTableMap.entries()).map(async ([venueId, tableIds]) => {
+      await Promise.all(
+        Array.from(tableIds).map((tableId) =>
+          this.venuesService.syncTableStatus(venueId, tableId, 'rejected'),
+        ),
+      );
       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
-    }
+    });
+
+    await Promise.all(venueSyncOps);
 
     // 4. Send notifications in parallel (fire-and-forget with error handling)
     const notifications = allExpired.map((r) => {

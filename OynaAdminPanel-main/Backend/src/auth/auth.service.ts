@@ -11,6 +11,7 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
 import * as admin from 'firebase-admin';
+import * as crypto from 'crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { BrevoService } from './brevo.service';
 
@@ -51,7 +52,10 @@ export class AuthService implements OnModuleInit {
     if (!password || password.length < 8) {
       throw new BadRequestException('Şifrə ən azı 8 simvoldan ibarət olmalıdır.');
     }
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9\W]/.test(password)) {
+    if (/\s/.test(password)) {
+      throw new BadRequestException('Şifrədə boşluq (whitespace) simvollarından istifadə edilə bilməz.');
+    }
+    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || (!/[0-9]/.test(password) && !/[!@#$%^&*(),.?":{}|<>]/.test(password))) {
       throw new BadRequestException(
         'Şifrədə ən azı bir böyük hərf, bir kiçik hərf və bir rəqəm və ya xüsusi simvol olmalıdır.',
       );
@@ -60,7 +64,7 @@ export class AuthService implements OnModuleInit {
 
   // ── Helper: Generate 6-digit OTP ──
   private generateOtp(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return crypto.randomInt(100000, 1000000).toString();
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -162,7 +166,7 @@ export class AuthService implements OnModuleInit {
       _id: user._id.toString(),
       email: user.email,
       displayName: user.displayName,
-      role: user.role as any,
+      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
     });
   }
 
@@ -231,7 +235,7 @@ export class AuthService implements OnModuleInit {
       _id: user._id.toString(),
       email: user.email,
       displayName: user.displayName,
-      role: user.role as any,
+      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
     });
   }
 
@@ -518,7 +522,7 @@ export class AuthService implements OnModuleInit {
       _id: user._id.toString(),
       email: user.email,
       displayName: user.displayName,
-      role: user.role as any,
+      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
     });
   }
 
@@ -564,7 +568,7 @@ export class AuthService implements OnModuleInit {
       _id: user._id.toString(),
       email: user.email,
       displayName: user.displayName,
-      role: user.role as any,
+      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
     });
   }
 }

@@ -57,7 +57,7 @@ export class FoodsService {
     // 3. Redis-ə yaz
     await this.redisService.set(cacheKey, foods, CACHE_TTL.LIST);
 
-    return foods as any;
+    return foods as unknown as Food[];
   }
 
   async findOne(id: string, adminId: string): Promise<Food> {
@@ -68,7 +68,7 @@ export class FoodsService {
     if (!food) {
       throw new NotFoundException('Food tapilmadi.');
     }
-    return food as any;
+    return food as unknown as Food;
   }
 
   async update(

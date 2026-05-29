@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import * as mongoose from 'mongoose';
+import * as crypto from 'crypto';
 import { VenuesService } from '../venues/venues.service';
 import {
   Reservation,
@@ -26,7 +28,8 @@ export class ReservationsService {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluded confusing chars like O, 0, I, 1
     let result = '';
     for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
+      const randIdx = crypto.randomInt(0, chars.length);
+      result += chars.charAt(randIdx);
     }
     return `#${result}`;
   }
@@ -104,7 +107,7 @@ export class ReservationsService {
     limit: number = 10,
     search?: string
   ): Promise<{ reservations: Reservation[], pagination: { totalCount: number, totalPages: number, currentPage: number, limit: number } }> {
-    const query: any = { venueId: { $in: adminVenueIds } };
+    const query: mongoose.QueryFilter<ReservationDocument> = { venueId: { $in: adminVenueIds } };
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
       query.$or = [
@@ -205,7 +208,7 @@ export class ReservationsService {
     rejectReason?: string,
     graceDeadline?: Date,
   ): Promise<Reservation> {
-    const updateData: any = { status };
+    const updateData: mongoose.UpdateQuery<ReservationDocument> = { status };
     if (rejectReason) {
       updateData.rejectReason = rejectReason;
     }
@@ -256,7 +259,7 @@ export class ReservationsService {
     if (!reservation) {
       throw new NotFoundException('Rezervasiya tapılmadı.');
     }
-    return reservation as any;
+    return reservation as unknown as Reservation;
   }
 
   /** Auto-reject pending reservations older than 10 minutes */
@@ -278,7 +281,7 @@ export class ReservationsService {
   }
 
   /** Find awaiting_arrival reservations whose grace deadline has passed */
-  async findExpiredAwaiting(): Promise<ReservationDocument[]> {
+  async findExpiredAwaiting(): Promise<Reservation[]> {
     const now = new Date();
     return this.reservationModel
       .find({
@@ -286,6 +289,6 @@ export class ReservationsService {
         graceDeadline: { $lte: now },
       })
       .lean()
-      .exec() as any;
+      .exec() as unknown as Reservation[];
   }
 }

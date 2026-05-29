@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { FoodsService } from './foods.service';
-import { Food } from './schemas/food.schema';
+import { CreateFoodDto, UpdateFoodDto } from './dto/foods.dto';
 import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
 
 interface AuthRequest extends Request {
@@ -29,7 +29,7 @@ export class FoodsController {
   constructor(private readonly foodsService: FoodsService) {}
 
   @Post()
-  create(@Body() dto: Partial<Food>, @Req() req: AuthRequest) {
+  create(@Body() dto: CreateFoodDto, @Req() req: AuthRequest) {
     return this.foodsService.create({
       ...dto,
       adminId: new Types.ObjectId(req.user.sub),
@@ -49,7 +49,7 @@ export class FoodsController {
   @Patch(':id')
   update(
     @Param('id', ParseObjectIdPipe) id: string,
-    @Body() dto: Partial<Food>,
+    @Body() dto: UpdateFoodDto,
     @Req() req: AuthRequest,
   ) {
     return this.foodsService.update(id, dto, req.user.sub);

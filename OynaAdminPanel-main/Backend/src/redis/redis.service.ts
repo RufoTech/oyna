@@ -48,7 +48,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Helper to set cache */
-  async set(key: string, value: any, ttlSeconds?: number): Promise<void> {
+  async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
     const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
     if (ttlSeconds) {
       await this.client.set(key, stringValue, 'EX', ttlSeconds);
@@ -101,18 +101,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return deleted;
   }
 
-  /** Distributed lock — SET NX with atomic expiration */
+  /** Distributed lock — SET NX with atomic expiration (Fail-Closed) */
   async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
     if (!this.client) {
-      this.logger.warn(`Redis client not initialized. Allowing lock acquisition by default for key: ${key}`);
-      return true;
+      this.logger.warn(`Redis client not initialized. Rejecting lock acquisition for key: ${key}`);
+      return false;
     }
     try {
       const result = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
       return result === 'OK';
     } catch (err) {
       this.logger.error(`Error acquiring lock for key ${key}:`, err.message);
-      return true; // Fallback to allowing execution if Redis fails
+      return false; // Fail-closed
     }
   }
 

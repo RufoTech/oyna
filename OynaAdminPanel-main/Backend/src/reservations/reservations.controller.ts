@@ -21,6 +21,9 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
 import { UpdateReservationStatusDto, CheckInDto } from './dto/reservations.dto';
+import { Reservation } from './schemas/reservation.schema';
+import { Venue } from '../venues/schemas/venue.schema';
+import { Types } from 'mongoose';
 
 interface AuthRequest extends Request {
   user: { sub: string; email: string; displayName?: string; role: string };
@@ -48,7 +51,7 @@ export class ReservationsController {
   ) {
     const adminId = req.user.sub;
     const venues = await this.venuesService.findAll(adminId);
-    const venueIds = venues.map((v: any) => v._id.toString());
+    const venueIds = (venues as (Venue & { _id: Types.ObjectId })[]).map((v) => v._id.toString());
     
     // Convert to numbers, defaults to 1 and 10
     const p = page ? parseInt(page) || 1 : 1;
@@ -65,8 +68,8 @@ export class ReservationsController {
   ) {
     const adminId = req.user.sub;
     const venues = await this.venuesService.findAll(adminId);
-    const venueIds = venues.map((v: any) => v._id.toString());
-    const validPeriod = ['1d', '1m', '3m', '6m', '1y'].includes(period || '') ? period as any : '1m';
+    const venueIds = (venues as (Venue & { _id: Types.ObjectId })[]).map((v) => v._id.toString());
+    const validPeriod = ['1d', '1m', '3m', '6m', '1y'].includes(period || '') ? (period as '1d' | '1m' | '3m' | '6m' | '1y') : '1m';
     return this.reservationsService.findByAdminForExport(venueIds, validPeriod);
   }
 
@@ -86,13 +89,13 @@ export class ReservationsController {
     // Check if admin has access to the reservation's venue
     if (originalReservation.venueId) {
       const venues = await this.venuesService.findAll(adminId);
-      const hasVenue = venues.some((v: any) => v._id.toString() === originalReservation.venueId.toString());
+      const hasVenue = (venues as (Venue & { _id: Types.ObjectId })[]).some((v) => v._id.toString() === originalReservation.venueId.toString());
       if (!hasVenue) {
         throw new ForbiddenException('Bu məkana daxil olmağa hüququnuz yoxdur.');
       }
     }
 
-    let finalStatus: any = body.status;
+    let finalStatus: 'accepted' | 'rejected' | 'canceled' | 'awaiting_arrival' | 'arrived' | 'no_show' = body.status as 'accepted' | 'rejected' | 'canceled' | 'awaiting_arrival' | 'arrived' | 'no_show';
     let graceDeadline: Date | undefined;
 
     if (body.status === 'accepted') {
@@ -120,32 +123,31 @@ export class ReservationsController {
     );
 
     // Emit real-time status update to the user who made the reservation
-    const reservation = updated as any;
     this.reservationsGateway.emitStatusUpdate(
-      reservation.userId,
-      reservation,
+      updated.userId,
+      updated,
     );
 
     // Send FCM push notification (works even if app is killed)
     if (body.status === 'accepted') {
       this.pushNotificationService.sendToUser(
-        reservation.userId,
+        updated.userId,
         '✅ Qəbul edildi!',
-        `${reservation.venueName} sizi ${reservation.time}-da gözləyir.`,
+        `${updated.venueName} sizi ${updated.time}-da gözləyir.`,
       );
     } else if (body.status === 'rejected') {
       const reason = body.rejectReason ? `\nSəbəb: ${body.rejectReason}` : '';
       this.pushNotificationService.sendToUser(
-        reservation.userId,
+        updated.userId,
         '❌ Rezervasiya İmtina Edildi',
-        `${reservation.venueName} müraciətinizi rədd etdi.${reason}`,
+        `${updated.venueName} müraciətinizi rədd etdi.${reason}`,
       );
     }
 
     // Sync table status in venue layout + broadcast to all clients
-    if (reservation.tableId && reservation.venueId) {
-      const venueId = reservation.venueId.toString();
-      await this.venuesService.syncTableStatus(venueId, reservation.tableId, finalStatus);
+    if (updated.tableId && updated.venueId) {
+      const venueId = updated.venueId.toString();
+      await this.venuesService.syncTableStatus(venueId, updated.tableId, finalStatus);
       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
     }
@@ -163,7 +165,7 @@ export class ReservationsController {
     
     // Check if admin has access to this venue
     const venues = await this.venuesService.findAll(adminId);
-    const hasVenue = venues.some((v: any) => v._id.toString() === body.venueId);
+    const hasVenue = (venues as (Venue & { _id: Types.ObjectId })[]).some((v) => v._id.toString() === body.venueId);
     
     if (!hasVenue) {
       throw new ForbiddenException('Bu məkana daxil olmağa hüququnuz yoxdur.');
@@ -172,22 +174,21 @@ export class ReservationsController {
     const updated = await this.reservationsService.checkIn(body.reservationNumber, body.venueId);
 
     // Emit real-time status update to the user who made the reservation
-    const reservation = updated as any;
     this.reservationsGateway.emitStatusUpdate(
-      reservation.userId,
-      reservation,
+      updated.userId,
+      updated,
     );
 
     this.pushNotificationService.sendToUser(
-      reservation.userId,
+      updated.userId,
       '🎮 Xoş gəldiniz!',
-      `${reservation.venueName} — Seansınız başladı. Uğurlar!`,
+      `${updated.venueName} — Seansınız başladı. Uğurlar!`,
     );
 
     // Sync table status to 'occupied' after check-in
-    if (reservation.tableId && reservation.venueId) {
-      const venueId = reservation.venueId.toString();
-      await this.venuesService.syncTableStatus(venueId, reservation.tableId, 'arrived');
+    if (updated.tableId && updated.venueId) {
+      const venueId = updated.venueId.toString();
+      await this.venuesService.syncTableStatus(venueId, updated.tableId, 'arrived');
       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
     }

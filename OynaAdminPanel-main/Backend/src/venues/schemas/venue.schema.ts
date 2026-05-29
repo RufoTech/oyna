@@ -28,7 +28,7 @@ class FeatureItem {
 }
 
 @Schema({ _id: false })
-class Tier {
+export class Tier {
   @Prop() id: string; // client-generated stable id — referenced by LayoutItem.tierId
   @Prop() type: string; // 'pc' | 'playstation'
   @Prop() title: string;
@@ -43,7 +43,7 @@ class Tier {
 }
 
 @Schema({ _id: false })
-class SpecPackage {
+export class SpecPackage {
   @Prop({ required: true }) title: string; // Fixed: Required title for robustness
   @Prop() description: string;
   @Prop() price: number; // Fixed: string -> number
@@ -51,7 +51,7 @@ class SpecPackage {
   @Prop({
     type: Number,
     validate: {
-      validator: function (this: any, v: number) {
+      validator: function (this: SpecPackage, v: number) {
         // validate discountPrice < price
         const price = this.price;
         return typeof v !== 'number' || typeof price !== 'number' || v <= price;
@@ -63,7 +63,7 @@ class SpecPackage {
 }
 
 @Schema({ _id: false })
-class Specs {
+export class Specs {
   @Prop() pageTitle: string;
   @Prop() pageSubtitle: string;
   @Prop({ type: [Tier], default: [] }) tiers: Tier[];
@@ -73,7 +73,7 @@ class Specs {
 // ── Sub-schemas for Layout (Floor-plan simulator) ──
 
 @Schema({ _id: false })
-class LayoutItem {
+export class LayoutItem {
   @Prop({ required: true }) id: string; // client-generated stable id
   @Prop({ required: true }) type: string; // 'pc' | 'playstation' | 'cabinet'
   @Prop() tierId?: string; // references Tier.id for PC items
@@ -96,7 +96,7 @@ class LayoutItem {
 }
 
 @Schema({ _id: false })
-class Layout {
+export class Layout {
   @Prop({ type: [LayoutItem], default: [] }) items: LayoutItem[];
   @Prop() updatedAt?: Date;
 }
@@ -122,7 +122,7 @@ class MediaGalleryItem {
 }
 
 @Schema({ _id: false })
-class OperatingScheduleDay {
+export class OperatingScheduleDay {
   @Prop() open: string;
   @Prop() close: string;
   @Prop({ default: false }) closed: boolean;
@@ -185,7 +185,7 @@ export class Venue {
   @Prop({
     type: Object,
     validate: {
-      validator: function (v: any) {
+      validator: function (v: { email?: string }) {
         if (!v || !v.email) return true;
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(v.email);
