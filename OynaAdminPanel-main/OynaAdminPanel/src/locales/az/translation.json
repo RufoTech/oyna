@@ -78,6 +78,7 @@
       "status": "Status"
     },
     "periods": {
+      "1d": { "label": "Gündəlik", "desc": "Bugünkü hesabat" },
       "1m": { "label": "1 Ay", "desc": "Son 30 gün" },
       "3m": { "label": "3 Ay", "desc": "Son 90 gün" },
       "6m": { "label": "6 Ay", "desc": "Son 180 gün" },

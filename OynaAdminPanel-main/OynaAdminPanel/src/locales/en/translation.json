@@ -78,6 +78,7 @@
       "status": "Status"
     },
     "periods": {
+      "1d": { "label": "Daily", "desc": "Today's report" },
       "1m": { "label": "1 Month", "desc": "Last 30 days" },
       "3m": { "label": "3 Months", "desc": "Last 90 days" },
       "6m": { "label": "6 Months", "desc": "Last 180 days" },

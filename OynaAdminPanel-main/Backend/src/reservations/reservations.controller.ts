@@ -66,7 +66,7 @@ export class ReservationsController {
     const adminId = req.user.sub;
     const venues = await this.venuesService.findAll(adminId);
     const venueIds = venues.map((v: any) => v._id.toString());
-    const validPeriod = ['1m', '3m', '6m', '1y'].includes(period || '') ? period as any : '1m';
+    const validPeriod = ['1d', '1m', '3m', '6m', '1y'].includes(period || '') ? period as any : '1m';
     return this.reservationsService.findByAdminForExport(venueIds, validPeriod);
   }
 

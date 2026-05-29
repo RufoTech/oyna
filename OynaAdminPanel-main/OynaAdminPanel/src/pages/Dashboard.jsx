@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
 const PERIODS = [
+  { key: '1d', labelKey: 'dashboard.periods.1d.label', descKey: 'dashboard.periods.1d.desc', icon: 'today' },
   { key: '1m', labelKey: 'dashboard.periods.1m.label', descKey: 'dashboard.periods.1m.desc', icon: 'date_range' },
   { key: '3m', labelKey: 'dashboard.periods.3m.label', descKey: 'dashboard.periods.3m.desc', icon: 'calendar_month' },
   { key: '6m', labelKey: 'dashboard.periods.6m.label', descKey: 'dashboard.periods.6m.desc', icon: 'event_note' },

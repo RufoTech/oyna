@@ -141,12 +141,19 @@ export class ReservationsService {
   /** Get all reservations for an admin's venues within a date period (for export) */
   async findByAdminForExport(
     adminVenueIds: string[],
-    period: '1m' | '3m' | '6m' | '1y',
+    period: '1d' | '1m' | '3m' | '6m' | '1y',
   ): Promise<Reservation[]> {
     const now = new Date();
-    const periodMap = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
-    const months = periodMap[period] || 1;
-    const from = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    let from: Date;
+
+    if (period === '1d') {
+      // Start of today (00:00:00) in local timezone
+      from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else {
+      const periodMap = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
+      const months = periodMap[period as '1m' | '3m' | '6m' | '1y'] || 1;
+      from = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    }
 
     return this.reservationModel
       .find({
