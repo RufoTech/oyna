@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../network/dio_client.dart';
 import '../constants/app_config.dart';
 
@@ -15,8 +15,13 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static const String _tokenKey = 'auth_token';
 
+  /// Secure storage for sensitive data (iOS Keychain / Android EncryptedSharedPreferences)
+  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   String? _cachedToken;
-  bool _isTokenCached = false;
+  bool _hasCheckedStorage = false;
 
   /// Exposes the real-time stream of the user authentication state.
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -26,39 +31,74 @@ class AuthService {
 
   /// Get stored JWT token (cached in memory to avoid disk I/O overhead)
   Future<String?> getToken() async {
-    if (_isTokenCached) return _cachedToken;
-    final prefs = await SharedPreferences.getInstance();
-    _cachedToken = prefs.getString(_tokenKey);
-    _isTokenCached = true;
+    if (_hasCheckedStorage) return _cachedToken;
+    final token = await _secureStorage.read(key: _tokenKey);
+    _cachedToken = token;
+    _hasCheckedStorage = true;
     return _cachedToken;
   }
 
   /// Sets and caches token
   Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    await _secureStorage.write(key: _tokenKey, value: token);
     _cachedToken = token;
-    _isTokenCached = true;
+    _hasCheckedStorage = true;
   }
 
-  /// Get decoded user payload from JWT token
-  Future<Map<String, dynamic>?> getUserData() async {
-    final token = await getToken();
-    if (token == null) return null;
-    
+  /// Decodes the JWT payload from a token string.
+  /// Returns null if the token is malformed or decoding fails.
+  Map<String, dynamic>? _decodeJwtPayload(String token) {
     try {
       final parts = token.split('.');
       if (parts.length != 3) return null;
-      
+
       final payload = parts[1];
-      String normalized = base64Url.normalize(payload);
+      final normalized = base64Url.normalize(payload);
       final decoded = utf8.decode(base64Url.decode(normalized));
-      
-      return json.decode(decoded);
+      return json.decode(decoded) as Map<String, dynamic>;
     } catch (e) {
-      debugPrint("Error decoding token: $e");
+      debugPrint("Error decoding JWT payload: $e");
       return null;
     }
+  }
+
+  /// Get decoded user payload from JWT token.
+  /// Checks for token expiration and returns null if expired.
+  Future<Map<String, dynamic>?> getUserData() async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    final data = _decodeJwtPayload(token);
+    if (data == null) return null;
+
+    // Check JWT expiration (G6 fix)
+    if (data.containsKey('exp')) {
+      final exp = data['exp'] as int;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      if (now >= exp) {
+        debugPrint("JWT token has expired.");
+        await _clearToken();
+        return null;
+      }
+    }
+
+    return data;
+  }
+
+  /// Check if the current token is expired without clearing it
+  Future<bool> isTokenExpired() async {
+    final token = await getToken();
+    if (token == null) return true;
+
+    final data = _decodeJwtPayload(token);
+    if (data == null) return true;
+
+    if (data.containsKey('exp')) {
+      final exp = data['exp'] as int;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      return now >= exp;
+    }
+    return false; // No exp claim, assume not expired
   }
 
   /// Initialize Google Sign-In (call once at app startup).
@@ -118,11 +158,8 @@ class AuthService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final token = response.data['access_token'];
         if (token != null) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_tokenKey, token);
-          _cachedToken = token;
-          _isTokenCached = true;
-          debugPrint("Backend sync successful, token stored.");
+          await saveToken(token);
+          debugPrint("Backend sync successful, token stored securely.");
         }
       }
     } catch (e) {
@@ -152,10 +189,7 @@ class AuthService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         final newToken = response.data['access_token'];
         if (newToken != null) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(_tokenKey, newToken);
-          _cachedToken = newToken;
-          _isTokenCached = true;
+          await saveToken(newToken);
           return true;
         }
       }
@@ -166,13 +200,17 @@ class AuthService {
     }
   }
 
+  /// Clears the token from secure storage and cache
+  Future<void> _clearToken() async {
+    await _secureStorage.delete(key: _tokenKey);
+    _cachedToken = null;
+    _hasCheckedStorage = true;
+  }
+
   /// Signs the user out of both Firebase and Google.
   Future<void> signOut() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_tokenKey);
-      _cachedToken = null;
-      _isTokenCached = true;
+      await _clearToken();
     } catch (e) {
       debugPrint("Error removing token: $e");
     }

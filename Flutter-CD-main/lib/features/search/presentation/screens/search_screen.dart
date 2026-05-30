@@ -16,7 +16,8 @@ import '../widgets/search_result_skeleton.dart';
 
 /// The search listing view with infinite scroll pagination.
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  final bool isActive;
+  const SearchScreen({super.key, this.isActive = true});
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -36,7 +37,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepA
     _scrollController.addListener(_onScroll);
     // Real-time saata görə (məs. 18:00-da açılır) vəziyyətlərin güncəllənməsi üçün taymer - optimized to 1 minute
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      if (mounted && widget.isActive) {
+        setState(() {});
+      }
     });
     // Fetch user location if not already available
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -45,6 +48,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepA
         ref.read(locationServiceProvider).getCurrentLocation();
       }
     });
+  }
+
+  @override
+  void didUpdateWidget(SearchScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      setState(() {});
+    }
   }
 
 

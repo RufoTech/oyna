@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/utils/validators.dart';
 import '../../../../shared/widgets/custom_warning_dialog.dart';
 import 'package:dio/dio.dart';
 import '../../../home/presentation/screens/main_screen.dart';
@@ -25,7 +26,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
-  String? _errorText;
 
   @override
   void dispose() {
@@ -51,8 +51,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(email)) {
+    if (!Validators.isValidEmail(email)) {
       showCustomWarningDialog(
         context: context,
         title: AppLocalizations.of(context)!.attention,
@@ -101,7 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         final data = e.response!.data;
         if (data is Map && data['message'] != null) {
           final rawMessage = data['message'];
-          String displayMessage = '';
+          String displayMessage;
           if (rawMessage is List) {
             displayMessage = rawMessage.map((m) => '• $m').join('\n');
           } else {
@@ -115,6 +114,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
               _showUserExistsDialog();
             }
             return;
+          }
+          // Sanitize: only show user-friendly messages, not raw stack traces (G13 fix)
+          if (displayMessage.contains('Exception') ||
+              displayMessage.contains('Error:') ||
+              displayMessage.length > 200) {
+            displayMessage = AppLocalizations.of(context)!.registerErrorGeneral;
           }
           showCustomWarningDialog(
             context: context,

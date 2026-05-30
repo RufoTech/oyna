@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/network/dio_client.dart';
+import '../../../../core/services/auth_service.dart';
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../home/presentation/screens/main_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
@@ -23,6 +23,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   final List<TextEditingController> _controllers =
       List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  // Dedicated FocusNodes for KeyboardListener to avoid leak (P10 fix)
+  final List<FocusNode> _keyboardFocusNodes = List.generate(6, (_) => FocusNode());
 
   bool _isLoading = false;
   bool _isResending = false;
@@ -42,6 +44,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       c.dispose();
     }
     for (var f in _focusNodes) {
+      f.dispose();
+    }
+    for (var f in _keyboardFocusNodes) {
       f.dispose();
     }
     _timer?.cancel();
@@ -76,8 +81,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
-  void _onOtpKeyDown(int index, RawKeyEvent event) {
-    if (event is RawKeyDownEvent &&
+  void _onOtpKeyDown(int index, KeyEvent event) {
+    if (event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.backspace &&
         _controllers[index].text.isEmpty &&
         index > 0) {
@@ -101,8 +106,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
       if (response.statusCode == 200 && response.data['access_token'] != null) {
         final token = response.data['access_token'];
-        final sharedPrefs = await SharedPreferences.getInstance();
-        await sharedPrefs.setString('auth_token', token);
+        await AuthService().saveToken(token);
 
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -273,9 +277,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return SizedBox(
           width: 48,
           height: 56,
-          child: RawKeyboardListener(
-            focusNode: FocusNode(),
-            onKey: (event) => _onOtpKeyDown(index, event),
+          child: KeyboardListener(
+            focusNode: _keyboardFocusNodes[index],
+            onKeyEvent: (event) => _onOtpKeyDown(index, event),
             child: TextField(
               controller: _controllers[index],
               focusNode: _focusNodes[index],

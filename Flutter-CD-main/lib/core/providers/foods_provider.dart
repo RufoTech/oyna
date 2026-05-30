@@ -3,7 +3,7 @@ import '../models/food_model.dart';
 import '../network/dio_client.dart';
 
 /// Fetches foods for a specific venue by its adminId
-final venueFoodsProvider = FutureProvider.family<List<Food>, String>((ref, adminId) async {
+final venueFoodsProvider = FutureProvider.autoDispose.family<List<Food>, String>((ref, adminId) async {
   if (adminId.isEmpty) return [];
   
   final dio = DioClient().dio;

@@ -1,0 +1,981 @@
+warning: in the working copy of 'Flutter-CD-main/lib/core/services/auth_service.dart', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Flutter-CD-main/linux/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Flutter-CD-main/linux/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Flutter-CD-main/macos/Flutter/GeneratedPluginRegistrant.swift', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Flutter-CD-main/windows/flutter/generated_plugin_registrant.cc', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Flutter-CD-main/windows/flutter/generated_plugins.cmake', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'OynaAdminPanel-main/Backend/src/auth/dto/auth.dto.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts', LF will be replaced by CRLF the next time Git touches it
+diff --git a/Flutter-CD-main/lib/core/providers/foods_provider.dart b/Flutter-CD-main/lib/core/providers/foods_provider.dart
+index f308301..394d98a 100644
+--- a/Flutter-CD-main/lib/core/providers/foods_provider.dart
++++ b/Flutter-CD-main/lib/core/providers/foods_provider.dart
+@@ -3,7 +3,7 @@ import '../models/food_model.dart';
+ import '../network/dio_client.dart';
+ 
+ /// Fetches foods for a specific venue by its adminId
+-final venueFoodsProvider = FutureProvider.family<List<Food>, String>((ref, adminId) async {
++final venueFoodsProvider = FutureProvider.autoDispose.family<List<Food>, String>((ref, adminId) async {
+   if (adminId.isEmpty) return [];
+   
+   final dio = DioClient().dio;
+diff --git a/Flutter-CD-main/lib/core/services/auth_service.dart b/Flutter-CD-main/lib/core/services/auth_service.dart
+index bcf0b41..d8b129a 100644
+--- a/Flutter-CD-main/lib/core/services/auth_service.dart
++++ b/Flutter-CD-main/lib/core/services/auth_service.dart
+@@ -2,7 +2,7 @@ import 'dart:convert';
+ import 'package:firebase_auth/firebase_auth.dart';
+ import 'package:google_sign_in/google_sign_in.dart';
+ import 'package:flutter/foundation.dart';
+-import 'package:shared_preferences/shared_preferences.dart';
++import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+ import '../network/dio_client.dart';
+ import '../constants/app_config.dart';
+ 
+@@ -15,8 +15,13 @@ class AuthService {
+   final FirebaseAuth _auth = FirebaseAuth.instance;
+   static const String _tokenKey = 'auth_token';
+ 
++  /// Secure storage for sensitive data (iOS Keychain / Android EncryptedSharedPreferences)
++  static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
++    aOptions: AndroidOptions(encryptedSharedPreferences: true),
++  );
++
+   String? _cachedToken;
+-  bool _isTokenCached = false;
++  bool _hasCheckedStorage = false;
+ 
+   /// Exposes the real-time stream of the user authentication state.
+   Stream<User?> get authStateChanges => _auth.authStateChanges();
+@@ -26,41 +31,76 @@ class AuthService {
+ 
+   /// Get stored JWT token (cached in memory to avoid disk I/O overhead)
+   Future<String?> getToken() async {
+-    if (_isTokenCached) return _cachedToken;
+-    final prefs = await SharedPreferences.getInstance();
+-    _cachedToken = prefs.getString(_tokenKey);
+-    _isTokenCached = true;
++    if (_hasCheckedStorage) return _cachedToken;
++    final token = await _secureStorage.read(key: _tokenKey);
++    _cachedToken = token;
++    _hasCheckedStorage = true;
+     return _cachedToken;
+   }
+ 
+   /// Sets and caches token
+   Future<void> saveToken(String token) async {
+-    final prefs = await SharedPreferences.getInstance();
+-    await prefs.setString(_tokenKey, token);
++    await _secureStorage.write(key: _tokenKey, value: token);
+     _cachedToken = token;
+-    _isTokenCached = true;
++    _hasCheckedStorage = true;
+   }
+ 
+-  /// Get decoded user payload from JWT token
+-  Future<Map<String, dynamic>?> getUserData() async {
+-    final token = await getToken();
+-    if (token == null) return null;
+-    
++  /// Decodes the JWT payload from a token string.
++  /// Returns null if the token is malformed or decoding fails.
++  Map<String, dynamic>? _decodeJwtPayload(String token) {
+     try {
+       final parts = token.split('.');
+       if (parts.length != 3) return null;
+-      
++
+       final payload = parts[1];
+-      String normalized = base64Url.normalize(payload);
++      final normalized = base64Url.normalize(payload);
+       final decoded = utf8.decode(base64Url.decode(normalized));
+-      
+-      return json.decode(decoded);
++      return json.decode(decoded) as Map<String, dynamic>;
+     } catch (e) {
+-      debugPrint("Error decoding token: $e");
++      debugPrint("Error decoding JWT payload: $e");
+       return null;
+     }
+   }
+ 
++  /// Get decoded user payload from JWT token.
++  /// Checks for token expiration and returns null if expired.
++  Future<Map<String, dynamic>?> getUserData() async {
++    final token = await getToken();
++    if (token == null) return null;
++
++    final data = _decodeJwtPayload(token);
++    if (data == null) return null;
++
++    // Check JWT expiration (G6 fix)
++    if (data.containsKey('exp')) {
++      final exp = data['exp'] as int;
++      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
++      if (now >= exp) {
++        debugPrint("JWT token has expired.");
++        await _clearToken();
++        return null;
++      }
++    }
++
++    return data;
++  }
++
++  /// Check if the current token is expired without clearing it
++  Future<bool> isTokenExpired() async {
++    final token = await getToken();
++    if (token == null) return true;
++
++    final data = _decodeJwtPayload(token);
++    if (data == null) return true;
++
++    if (data.containsKey('exp')) {
++      final exp = data['exp'] as int;
++      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
++      return now >= exp;
++    }
++    return false; // No exp claim, assume not expired
++  }
++
+   /// Initialize Google Sign-In (call once at app startup).
+   Future<void> initializeGoogleSignIn() async {
+     try {
+@@ -118,11 +158,8 @@ class AuthService {
+       if (response.statusCode == 200 || response.statusCode == 201) {
+         final token = response.data['access_token'];
+         if (token != null) {
+-          final prefs = await SharedPreferences.getInstance();
+-          await prefs.setString(_tokenKey, token);
+-          _cachedToken = token;
+-          _isTokenCached = true;
+-          debugPrint("Backend sync successful, token stored.");
++          await saveToken(token);
++          debugPrint("Backend sync successful, token stored securely.");
+         }
+       }
+     } catch (e) {
+@@ -152,10 +189,7 @@ class AuthService {
+       if (response.statusCode == 200 || response.statusCode == 201) {
+         final newToken = response.data['access_token'];
+         if (newToken != null) {
+-          final prefs = await SharedPreferences.getInstance();
+-          await prefs.setString(_tokenKey, newToken);
+-          _cachedToken = newToken;
+-          _isTokenCached = true;
++          await saveToken(newToken);
+           return true;
+         }
+       }
+@@ -166,13 +200,17 @@ class AuthService {
+     }
+   }
+ 
++  /// Clears the token from secure storage and cache
++  Future<void> _clearToken() async {
++    await _secureStorage.delete(key: _tokenKey);
++    _cachedToken = null;
++    _hasCheckedStorage = true;
++  }
++
+   /// Signs the user out of both Firebase and Google.
+   Future<void> signOut() async {
+     try {
+-      final prefs = await SharedPreferences.getInstance();
+-      await prefs.remove(_tokenKey);
+-      _cachedToken = null;
+-      _isTokenCached = true;
++      await _clearToken();
+     } catch (e) {
+       debugPrint("Error removing token: $e");
+     }
+diff --git a/Flutter-CD-main/lib/core/theme/app_colors.dart b/Flutter-CD-main/lib/core/theme/app_colors.dart
+index 1513188..c15970c 100644
+--- a/Flutter-CD-main/lib/core/theme/app_colors.dart
++++ b/Flutter-CD-main/lib/core/theme/app_colors.dart
+@@ -67,6 +67,9 @@ class AppColors {
+   static const Color background = Color(0xFFFFFFFF);
+   static const Color onBackground = Color(0xFF000000);
+ 
++  // Scaffold Background (used across many screens)
++  static const Color scaffoldBackground = Color(0xFFF9F9FE);
++
+   // Gradients
+   static const LinearGradient primaryGradient = LinearGradient(
+     begin: Alignment.topLeft,
+diff --git a/Flutter-CD-main/lib/features/auth/presentation/screens/login_screen.dart b/Flutter-CD-main/lib/features/auth/presentation/screens/login_screen.dart
+index 24abc43..4af0891 100644
+--- a/Flutter-CD-main/lib/features/auth/presentation/screens/login_screen.dart
++++ b/Flutter-CD-main/lib/features/auth/presentation/screens/login_screen.dart
+@@ -1,16 +1,14 @@
+ import 'dart:ui';
+ import 'package:flutter/material.dart';
+ import '../../../../l10n/app_localizations.dart';
+-import 'package:cached_network_image/cached_network_image.dart';
+ 
+ import '../../../../core/theme/app_colors.dart';
+ import '../../../../core/theme/app_typography.dart';
+-import '../../../../shared/widgets/glass_panel.dart';
+ import '../../../../shared/widgets/custom_warning_dialog.dart';
+ import '../../../../core/services/auth_service.dart';
+ import '../../../../core/network/dio_client.dart';
++import '../../../../core/utils/validators.dart';
+ import 'package:dio/dio.dart';
+-import 'package:shared_preferences/shared_preferences.dart';
+ import '../../../home/presentation/screens/main_screen.dart';
+ import 'register_screen.dart';
+ import 'forgot_password_screen.dart';
+@@ -27,7 +25,6 @@ class _LoginScreenState extends State<LoginScreen> {
+   final _emailController = TextEditingController();
+   final _passwordController = TextEditingController();
+   bool _isLoading = false;
+-  String? _errorText;
+ 
+   @override
+   void dispose() {
+@@ -49,8 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
+       return;
+     }
+ 
+-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+-    if (!emailRegex.hasMatch(email)) {
++    if (!Validators.isValidEmail(email)) {
+       showCustomWarningDialog(
+         context: context,
+         title: AppLocalizations.of(context)!.attention,
+@@ -98,12 +94,18 @@ class _LoginScreenState extends State<LoginScreen> {
+         final data = e.response!.data;
+         if (data is Map && data['message'] != null) {
+           final rawMessage = data['message'];
+-          String displayMessage = '';
++          String displayMessage;
+           if (rawMessage is List) {
+             displayMessage = rawMessage.map((m) => '• $m').join('\n');
+           } else {
+             displayMessage = rawMessage.toString();
+           }
++          // Sanitize: only show user-friendly messages, not raw stack traces
++          if (displayMessage.contains('Exception') ||
++              displayMessage.contains('Error:') ||
++              displayMessage.length > 200) {
++            displayMessage = AppLocalizations.of(context)!.loginErrorInvalid;
++          }
+           showCustomWarningDialog(
+             context: context,
+             title: AppLocalizations.of(context)!.attention,
+diff --git a/Flutter-CD-main/lib/features/auth/presentation/screens/otp_verification_screen.dart b/Flutter-CD-main/lib/features/auth/presentation/screens/otp_verification_screen.dart
+index f902720..a5e5296 100644
+--- a/Flutter-CD-main/lib/features/auth/presentation/screens/otp_verification_screen.dart
++++ b/Flutter-CD-main/lib/features/auth/presentation/screens/otp_verification_screen.dart
+@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
+ import '../../../../core/theme/app_colors.dart';
+ import '../../../../core/theme/app_typography.dart';
+ import '../../../../core/network/dio_client.dart';
++import '../../../../core/services/auth_service.dart';
+ import 'package:dio/dio.dart';
+-import 'package:shared_preferences/shared_preferences.dart';
+ import '../../../home/presentation/screens/main_screen.dart';
+ 
+ class OtpVerificationScreen extends StatefulWidget {
+@@ -23,6 +23,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+   final List<TextEditingController> _controllers =
+       List.generate(6, (_) => TextEditingController());
+   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
++  // Dedicated FocusNodes for KeyboardListener to avoid leak (P10 fix)
++  final List<FocusNode> _keyboardFocusNodes = List.generate(6, (_) => FocusNode());
+ 
+   bool _isLoading = false;
+   bool _isResending = false;
+@@ -44,6 +46,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+     for (var f in _focusNodes) {
+       f.dispose();
+     }
++    for (var f in _keyboardFocusNodes) {
++      f.dispose();
++    }
+     _timer?.cancel();
+     super.dispose();
+   }
+@@ -76,8 +81,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+     }
+   }
+ 
+-  void _onOtpKeyDown(int index, RawKeyEvent event) {
+-    if (event is RawKeyDownEvent &&
++  void _onOtpKeyDown(int index, KeyEvent event) {
++    if (event is KeyDownEvent &&
+         event.logicalKey == LogicalKeyboardKey.backspace &&
+         _controllers[index].text.isEmpty &&
+         index > 0) {
+@@ -101,8 +106,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+ 
+       if (response.statusCode == 200 && response.data['access_token'] != null) {
+         final token = response.data['access_token'];
+-        final sharedPrefs = await SharedPreferences.getInstance();
+-        await sharedPrefs.setString('auth_token', token);
++        await AuthService().saveToken(token);
+ 
+         if (mounted) {
+           Navigator.of(context).pushAndRemoveUntil(
+@@ -273,9 +277,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+         return SizedBox(
+           width: 48,
+           height: 56,
+-          child: RawKeyboardListener(
+-            focusNode: FocusNode(),
+-            onKey: (event) => _onOtpKeyDown(index, event),
++          child: KeyboardListener(
++            focusNode: _keyboardFocusNodes[index],
++            onKeyEvent: (event) => _onOtpKeyDown(index, event),
+             child: TextField(
+               controller: _controllers[index],
+               focusNode: _focusNodes[index],
+diff --git a/Flutter-CD-main/lib/features/auth/presentation/screens/register_screen.dart b/Flutter-CD-main/lib/features/auth/presentation/screens/register_screen.dart
+index 092763b..5ebf47c 100644
+--- a/Flutter-CD-main/lib/features/auth/presentation/screens/register_screen.dart
++++ b/Flutter-CD-main/lib/features/auth/presentation/screens/register_screen.dart
+@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
+ import '../../../../core/theme/app_typography.dart';
+ import '../../../../core/services/auth_service.dart';
+ import '../../../../core/network/dio_client.dart';
++import '../../../../core/utils/validators.dart';
+ import '../../../../shared/widgets/custom_warning_dialog.dart';
+ import 'package:dio/dio.dart';
+ import '../../../home/presentation/screens/main_screen.dart';
+@@ -25,7 +26,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
+   final _confirmPasswordController = TextEditingController();
+   bool _obscurePassword = true;
+   bool _isLoading = false;
+-  String? _errorText;
+ 
+   @override
+   void dispose() {
+@@ -51,8 +51,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
+       return;
+     }
+ 
+-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+-    if (!emailRegex.hasMatch(email)) {
++    if (!Validators.isValidEmail(email)) {
+       showCustomWarningDialog(
+         context: context,
+         title: AppLocalizations.of(context)!.attention,
+@@ -101,7 +100,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
+         final data = e.response!.data;
+         if (data is Map && data['message'] != null) {
+           final rawMessage = data['message'];
+-          String displayMessage = '';
++          String displayMessage;
+           if (rawMessage is List) {
+             displayMessage = rawMessage.map((m) => '• $m').join('\n');
+           } else {
+@@ -116,6 +115,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
+             }
+             return;
+           }
++          // Sanitize: only show user-friendly messages, not raw stack traces (G13 fix)
++          if (displayMessage.contains('Exception') ||
++              displayMessage.contains('Error:') ||
++              displayMessage.length > 200) {
++            displayMessage = AppLocalizations.of(context)!.registerErrorGeneral;
++          }
+           showCustomWarningDialog(
+             context: context,
+             title: AppLocalizations.of(context)!.attention,
+diff --git a/Flutter-CD-main/lib/features/favorites/presentation/screens/favorites_screen.dart b/Flutter-CD-main/lib/features/favorites/presentation/screens/favorites_screen.dart
+index 9e6ef0d..34ff7f3 100644
+--- a/Flutter-CD-main/lib/features/favorites/presentation/screens/favorites_screen.dart
++++ b/Flutter-CD-main/lib/features/favorites/presentation/screens/favorites_screen.dart
+@@ -32,7 +32,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> with Automati
+     final venuesState = ref.watch(venuesProvider);
+ 
+     return Container(
+-      color: const Color(0xFFF9F9FE),
++      color: AppColors.scaffoldBackground,
+       child: CustomScrollView(
+         slivers: [
+           SliverToBoxAdapter(
+diff --git a/Flutter-CD-main/lib/features/home/presentation/screens/main_screen.dart b/Flutter-CD-main/lib/features/home/presentation/screens/main_screen.dart
+index 5cbf775..9b30ade 100644
+--- a/Flutter-CD-main/lib/features/home/presentation/screens/main_screen.dart
++++ b/Flutter-CD-main/lib/features/home/presentation/screens/main_screen.dart
+@@ -98,7 +98,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
+                   isActive: _currentIndex == 0,
+                   onDetailOverlayChanged: _onDetailOverlayChanged,
+                 ),
+-                const SearchScreen(),
++                SearchScreen(isActive: _currentIndex == 1),
+                 const FavoritesScreen(),
+                 ProfileScreen(onNavigateToFavorites: () => _onTabSelected(2)),
+               ],
+diff --git a/Flutter-CD-main/lib/features/profile/presentation/screens/discovered_venues_screen.dart b/Flutter-CD-main/lib/features/profile/presentation/screens/discovered_venues_screen.dart
+index dd0682c..369015e 100644
+--- a/Flutter-CD-main/lib/features/profile/presentation/screens/discovered_venues_screen.dart
++++ b/Flutter-CD-main/lib/features/profile/presentation/screens/discovered_venues_screen.dart
+@@ -20,7 +20,7 @@ class DiscoveredVenuesScreen extends ConsumerWidget {
+     final discoveredState = ref.watch(discoveredVenuesProvider(userId));
+ 
+     return Scaffold(
+-      backgroundColor: const Color(0xFFF9F9FE),
++      backgroundColor: AppColors.scaffoldBackground,
+       appBar: AppBar(
+         backgroundColor: Colors.transparent,
+         elevation: 0,
+diff --git a/Flutter-CD-main/lib/features/profile/presentation/screens/my_reservations_screen.dart b/Flutter-CD-main/lib/features/profile/presentation/screens/my_reservations_screen.dart
+index 219a5b8..fd65715 100644
+--- a/Flutter-CD-main/lib/features/profile/presentation/screens/my_reservations_screen.dart
++++ b/Flutter-CD-main/lib/features/profile/presentation/screens/my_reservations_screen.dart
+@@ -211,9 +211,9 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+-      backgroundColor: const Color(0xFFF9F9FE),
++      backgroundColor: AppColors.scaffoldBackground,
+       appBar: AppBar(
+-        backgroundColor: const Color(0xFFF9F9FE),
++        backgroundColor: AppColors.scaffoldBackground,
+         elevation: 0,
+         scrolledUnderElevation: 0,
+         leading: IconButton(
+diff --git a/Flutter-CD-main/lib/features/profile/presentation/screens/profile_screen.dart b/Flutter-CD-main/lib/features/profile/presentation/screens/profile_screen.dart
+index bf336ef..50920e3 100644
+--- a/Flutter-CD-main/lib/features/profile/presentation/screens/profile_screen.dart
++++ b/Flutter-CD-main/lib/features/profile/presentation/screens/profile_screen.dart
+@@ -57,7 +57,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+       builder: (ctx) {
+         return Container(
+           decoration: const BoxDecoration(
+-            color: Color(0xFFF9F9FE),
++            color: AppColors.scaffoldBackground,
+             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+           ),
+           padding: EdgeInsets.fromLTRB(
+@@ -165,7 +165,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+     final currentLanguageName = localeDisplayNames[currentLocale.languageCode] ?? currentLocale.languageCode;
+ 
+     return Container(
+-      color: const Color(0xFFF9F9FE),
++      color: AppColors.scaffoldBackground,
+       child: Stack(
+         children: [
+           // Scrollable Content
+@@ -622,7 +622,7 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
+ 
+     return Container(
+       decoration: const BoxDecoration(
+-        color: Color(0xFFF9F9FE),
++        color: AppColors.scaffoldBackground,
+         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+       ),
+       padding: EdgeInsets.fromLTRB(
+diff --git a/Flutter-CD-main/lib/features/search/presentation/screens/reservation_screen.dart b/Flutter-CD-main/lib/features/search/presentation/screens/reservation_screen.dart
+index 35eda04..a58d57c 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/screens/reservation_screen.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/screens/reservation_screen.dart
+@@ -517,7 +517,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
+     return AnnotatedRegion<SystemUiOverlayStyle>(
+       value: SystemUiOverlayStyle.dark,
+       child: Scaffold(
+-        backgroundColor: const Color(0xFFF9F9FE),
++        backgroundColor: AppColors.scaffoldBackground,
+         body: Stack(
+           children: [
+             Column(
+diff --git a/Flutter-CD-main/lib/features/search/presentation/screens/reservation_success_screen.dart b/Flutter-CD-main/lib/features/search/presentation/screens/reservation_success_screen.dart
+index d02a272..f6633a0 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/screens/reservation_success_screen.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/screens/reservation_success_screen.dart
+@@ -59,7 +59,7 @@ class _ReservationSuccessScreenState extends State<ReservationSuccessScreen>
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+-      backgroundColor: const Color(0xFFF9F9FE),
++      backgroundColor: AppColors.scaffoldBackground,
+       body: SafeArea(
+         child: Padding(
+           padding: const EdgeInsets.symmetric(horizontal: 32),
+diff --git a/Flutter-CD-main/lib/features/search/presentation/screens/search_screen.dart b/Flutter-CD-main/lib/features/search/presentation/screens/search_screen.dart
+index 0522ea8..fbda2fb 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/screens/search_screen.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/screens/search_screen.dart
+@@ -16,7 +16,8 @@ import '../widgets/search_result_skeleton.dart';
+ 
+ /// The search listing view with infinite scroll pagination.
+ class SearchScreen extends ConsumerStatefulWidget {
+-  const SearchScreen({super.key});
++  final bool isActive;
++  const SearchScreen({super.key, this.isActive = true});
+ 
+   @override
+   ConsumerState<SearchScreen> createState() => _SearchScreenState();
+@@ -36,7 +37,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepA
+     _scrollController.addListener(_onScroll);
+     // Real-time saata görə (məs. 18:00-da açılır) vəziyyətlərin güncəllənməsi üçün taymer - optimized to 1 minute
+     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+-      if (mounted) setState(() {});
++      if (mounted && widget.isActive) {
++        setState(() {});
++      }
+     });
+     // Fetch user location if not already available
+     WidgetsBinding.instance.addPostFrameCallback((_) {
+@@ -47,6 +50,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> with AutomaticKeepA
+     });
+   }
+ 
++  @override
++  void didUpdateWidget(SearchScreen oldWidget) {
++    super.didUpdateWidget(oldWidget);
++    if (widget.isActive && !oldWidget.isActive) {
++      setState(() {});
++    }
++  }
++
+ 
+ 
+   /// Formats a distance in meters to a human-readable string.
+diff --git a/Flutter-CD-main/lib/features/search/presentation/screens/venue_detail_screen.dart b/Flutter-CD-main/lib/features/search/presentation/screens/venue_detail_screen.dart
+index 19cd0b9..c7b1ea3 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/screens/venue_detail_screen.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/screens/venue_detail_screen.dart
+@@ -85,7 +85,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
+         statusBarColor: Colors.transparent,
+       ),
+       child: Scaffold(
+-        backgroundColor: const Color(0xFFF9F9FE),
++        backgroundColor: AppColors.scaffoldBackground,
+         body: Stack(
+           children: [
+             // Scrollable Body
+diff --git a/Flutter-CD-main/lib/features/search/presentation/screens/venue_menu_screen.dart b/Flutter-CD-main/lib/features/search/presentation/screens/venue_menu_screen.dart
+index c92f1af..ba70c0d 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/screens/venue_menu_screen.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/screens/venue_menu_screen.dart
+@@ -7,6 +7,8 @@ import '../../../../core/theme/app_typography.dart';
+ import '../../../../core/models/venue_model.dart';
+ import '../../../../core/models/food_model.dart';
+ import '../../../../core/providers/foods_provider.dart';
++import '../../../../core/constants/app_config.dart';
++import 'package:cached_network_image/cached_network_image.dart';
+ 
+ final selectedFoodCategoryProvider = StateProvider<String>((ref) => 'Hamısı');
+ 
+@@ -204,10 +206,22 @@ class _MenuItemCard extends StatelessWidget {
+                     width: 80,
+                     height: 80,
+                     color: AppColors.surfaceContainer,
+-                    child: Image.network(
+-                      imageUrl,
++                    child: CachedNetworkImage(
++                      imageUrl: imageUrl.startsWith('http') ? imageUrl : (AppConfig.formatImageUrl(imageUrl) ?? ''),
+                       fit: BoxFit.cover,
+-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.coffee),
++                      memCacheWidth: 240,
++                      memCacheHeight: 240,
++                      placeholder: (context, url) => Container(
++                        color: AppColors.surfaceContainer,
++                        child: const Center(
++                          child: SizedBox(
++                            width: 16,
++                            height: 16,
++                            child: CircularProgressIndicator(strokeWidth: 2),
++                          ),
++                        ),
++                      ),
++                      errorWidget: (context, url, error) => const Icon(Icons.coffee),
+                     ),
+                   ),
+                 ),
+diff --git a/Flutter-CD-main/lib/features/search/presentation/widgets/venue_detail/venue_hero_section.dart b/Flutter-CD-main/lib/features/search/presentation/widgets/venue_detail/venue_hero_section.dart
+index 288bd56..a9fb644 100644
+--- a/Flutter-CD-main/lib/features/search/presentation/widgets/venue_detail/venue_hero_section.dart
++++ b/Flutter-CD-main/lib/features/search/presentation/widgets/venue_detail/venue_hero_section.dart
+@@ -71,7 +71,7 @@ class _VenueHeroSectionState extends State<VenueHeroSection> {
+                   gradient: LinearGradient(
+                     begin: Alignment.bottomCenter,
+                     end: Alignment.topCenter,
+-                    colors: [const Color(0xFFF9F9FE), Colors.transparent],
++                    colors: [AppColors.scaffoldBackground, Colors.transparent],
+                     stops: const [0.0, 0.4],
+                   ),
+                 ),
+diff --git a/Flutter-CD-main/linux/flutter/generated_plugin_registrant.cc b/Flutter-CD-main/linux/flutter/generated_plugin_registrant.cc
+index f6f23bf..38dd0bc 100644
+--- a/Flutter-CD-main/linux/flutter/generated_plugin_registrant.cc
++++ b/Flutter-CD-main/linux/flutter/generated_plugin_registrant.cc
+@@ -6,9 +6,13 @@
+ 
+ #include "generated_plugin_registrant.h"
+ 
++#include <flutter_secure_storage_linux/flutter_secure_storage_linux_plugin.h>
+ #include <url_launcher_linux/url_launcher_plugin.h>
+ 
+ void fl_register_plugins(FlPluginRegistry* registry) {
++  g_autoptr(FlPluginRegistrar) flutter_secure_storage_linux_registrar =
++      fl_plugin_registry_get_registrar_for_plugin(registry, "FlutterSecureStorageLinuxPlugin");
++  flutter_secure_storage_linux_plugin_register_with_registrar(flutter_secure_storage_linux_registrar);
+   g_autoptr(FlPluginRegistrar) url_launcher_linux_registrar =
+       fl_plugin_registry_get_registrar_for_plugin(registry, "UrlLauncherPlugin");
+   url_launcher_plugin_register_with_registrar(url_launcher_linux_registrar);
+diff --git a/Flutter-CD-main/linux/flutter/generated_plugins.cmake b/Flutter-CD-main/linux/flutter/generated_plugins.cmake
+index df8d2f7..7e7bd77 100644
+--- a/Flutter-CD-main/linux/flutter/generated_plugins.cmake
++++ b/Flutter-CD-main/linux/flutter/generated_plugins.cmake
+@@ -3,6 +3,7 @@
+ #
+ 
+ list(APPEND FLUTTER_PLUGIN_LIST
++  flutter_secure_storage_linux
+   url_launcher_linux
+ )
+ 
+diff --git a/Flutter-CD-main/macos/Flutter/GeneratedPluginRegistrant.swift b/Flutter-CD-main/macos/Flutter/GeneratedPluginRegistrant.swift
+index a8bfc94..1d2542f 100644
+--- a/Flutter-CD-main/macos/Flutter/GeneratedPluginRegistrant.swift
++++ b/Flutter-CD-main/macos/Flutter/GeneratedPluginRegistrant.swift
+@@ -9,6 +9,7 @@ import firebase_auth
+ import firebase_core
+ import firebase_messaging
+ import flutter_local_notifications
++import flutter_secure_storage_macos
+ import geolocator_apple
+ import google_sign_in_ios
+ import package_info_plus
+@@ -21,6 +22,7 @@ func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {
+   FLTFirebaseCorePlugin.register(with: registry.registrar(forPlugin: "FLTFirebaseCorePlugin"))
+   FLTFirebaseMessagingPlugin.register(with: registry.registrar(forPlugin: "FLTFirebaseMessagingPlugin"))
+   FlutterLocalNotificationsPlugin.register(with: registry.registrar(forPlugin: "FlutterLocalNotificationsPlugin"))
++  FlutterSecureStoragePlugin.register(with: registry.registrar(forPlugin: "FlutterSecureStoragePlugin"))
+   GeolocatorPlugin.register(with: registry.registrar(forPlugin: "GeolocatorPlugin"))
+   FLTGoogleSignInPlugin.register(with: registry.registrar(forPlugin: "FLTGoogleSignInPlugin"))
+   FPPPackageInfoPlusPlugin.register(with: registry.registrar(forPlugin: "FPPPackageInfoPlusPlugin"))
+diff --git a/Flutter-CD-main/pubspec.lock b/Flutter-CD-main/pubspec.lock
+index 47e87bf..3ead499 100644
+--- a/Flutter-CD-main/pubspec.lock
++++ b/Flutter-CD-main/pubspec.lock
+@@ -347,6 +347,54 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "2.6.1"
++  flutter_secure_storage:
++    dependency: "direct main"
++    description:
++      name: flutter_secure_storage
++      sha256: "9cad52d75ebc511adfae3d447d5d13da15a55a92c9410e50f67335b6d21d16ea"
++      url: "https://pub.dev"
++    source: hosted
++    version: "9.2.4"
++  flutter_secure_storage_linux:
++    dependency: transitive
++    description:
++      name: flutter_secure_storage_linux
++      sha256: be76c1d24a97d0b98f8b54bce6b481a380a6590df992d0098f868ad54dc8f688
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.2.3"
++  flutter_secure_storage_macos:
++    dependency: transitive
++    description:
++      name: flutter_secure_storage_macos
++      sha256: "6c0a2795a2d1de26ae202a0d78527d163f4acbb11cde4c75c670f3a0fc064247"
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.1.3"
++  flutter_secure_storage_platform_interface:
++    dependency: transitive
++    description:
++      name: flutter_secure_storage_platform_interface
++      sha256: cf91ad32ce5adef6fba4d736a542baca9daf3beac4db2d04be350b87f69ac4a8
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.1.2"
++  flutter_secure_storage_web:
++    dependency: transitive
++    description:
++      name: flutter_secure_storage_web
++      sha256: f4ebff989b4f07b2656fb16b47852c0aab9fed9b4ec1c70103368337bc1886a9
++      url: "https://pub.dev"
++    source: hosted
++    version: "1.2.1"
++  flutter_secure_storage_windows:
++    dependency: transitive
++    description:
++      name: flutter_secure_storage_windows
++      sha256: b20b07cb5ed4ed74fc567b78a72936203f587eba460af1df11281c9326cd3709
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.1.2"
+   flutter_test:
+     dependency: "direct dev"
+     description: flutter
+@@ -549,6 +597,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "1.0.1"
++  js:
++    dependency: transitive
++    description:
++      name: js
++      sha256: f2c445dce49627136094980615a031419f7f3eb393237e4ecd97ac15dea343f3
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.6.7"
+   latlong2:
+     dependency: "direct main"
+     description:
+diff --git a/Flutter-CD-main/pubspec.yaml b/Flutter-CD-main/pubspec.yaml
+index 54bf2fa..cdc39bd 100644
+--- a/Flutter-CD-main/pubspec.yaml
++++ b/Flutter-CD-main/pubspec.yaml
+@@ -16,6 +16,7 @@ dependencies:
+   flutter_map: ^8.2.2
+   latlong2: ^0.9.1
+   shared_preferences: ^2.5.5
++  flutter_secure_storage: ^9.2.2
+   firebase_core: ^4.6.0
+   firebase_auth: ^6.3.0
+   google_sign_in: ^7.2.0
+diff --git a/Flutter-CD-main/windows/flutter/generated_plugin_registrant.cc b/Flutter-CD-main/windows/flutter/generated_plugin_registrant.cc
+index 05879ee..cf5f9f5 100644
+--- a/Flutter-CD-main/windows/flutter/generated_plugin_registrant.cc
++++ b/Flutter-CD-main/windows/flutter/generated_plugin_registrant.cc
+@@ -8,6 +8,7 @@
+ 
+ #include <firebase_auth/firebase_auth_plugin_c_api.h>
+ #include <firebase_core/firebase_core_plugin_c_api.h>
++#include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
+ #include <geolocator_windows/geolocator_windows.h>
+ #include <url_launcher_windows/url_launcher_windows.h>
+ 
+@@ -16,6 +17,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
+       registry->GetRegistrarForPlugin("FirebaseAuthPluginCApi"));
+   FirebaseCorePluginCApiRegisterWithRegistrar(
+       registry->GetRegistrarForPlugin("FirebaseCorePluginCApi"));
++  FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
++      registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
+   GeolocatorWindowsRegisterWithRegistrar(
+       registry->GetRegistrarForPlugin("GeolocatorWindows"));
+   UrlLauncherWindowsRegisterWithRegistrar(
+diff --git a/Flutter-CD-main/windows/flutter/generated_plugins.cmake b/Flutter-CD-main/windows/flutter/generated_plugins.cmake
+index 7a4ba50..d54280a 100644
+--- a/Flutter-CD-main/windows/flutter/generated_plugins.cmake
++++ b/Flutter-CD-main/windows/flutter/generated_plugins.cmake
+@@ -5,6 +5,7 @@
+ list(APPEND FLUTTER_PLUGIN_LIST
+   firebase_auth
+   firebase_core
++  flutter_secure_storage_windows
+   geolocator_windows
+   url_launcher_windows
+ )
+diff --git a/OynaAdminPanel-main/Backend/src/auth/auth.controller.ts b/OynaAdminPanel-main/Backend/src/auth/auth.controller.ts
+index 75b404a..27b3944 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/auth.controller.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/auth.controller.ts
+@@ -29,6 +29,8 @@ import {
+   ResetPasswordDto,
+   GoogleLoginDto,
+   ResetAdminPasswordDto,
++  UpdateProfileDto,
++  RefreshTokenDto,
+ } from './dto/auth.dto';
+ 
+ interface AuthRequest extends Request {
+@@ -163,6 +165,7 @@ export class AuthController {
+     return this.authService.resetPassword(id, dto.password);
+   }
+ 
++  @Throttle({ default: { limit: 5, ttl: 60000 } })
+   @HttpCode(HttpStatus.OK)
+   @Post('google')
+   async googleLogin(
+@@ -198,8 +201,22 @@ export class AuthController {
+   @Patch('profile')
+   async updateProfile(
+     @Req() req: AuthRequest,
+-    @Body() body: { displayName?: string },
++    @Body() dto: UpdateProfileDto,
+   ) {
+-    return this.authService.updateProfile(req.user.sub, body);
++    return this.authService.updateProfile(req.user.sub, dto);
++  }
++
++  @Throttle({ default: { limit: 5, ttl: 60000 } })
++  @HttpCode(HttpStatus.OK)
++  @Post('refresh')
++  async refresh(@Body() dto: RefreshTokenDto) {
++    return this.authService.refreshTokens(dto.refreshToken);
++  }
++
++  @UseGuards(JwtAuthGuard)
++  @HttpCode(HttpStatus.OK)
++  @Post('logout')
++  async logout(@Req() req: AuthRequest) {
++    return this.authService.logout(req.user.sub);
+   }
+ }
+diff --git a/OynaAdminPanel-main/Backend/src/auth/auth.module.ts b/OynaAdminPanel-main/Backend/src/auth/auth.module.ts
+index 4e516b9..067471d 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/auth.module.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/auth.module.ts
+@@ -19,7 +19,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
+       inject: [ConfigService],
+       useFactory: (config: ConfigService) => ({
+         secret: config.get<string>('JWT_SECRET'),
+-        signOptions: { expiresIn: '3650d' },
++        signOptions: { expiresIn: '15m' },
+       }),
+     }),
+   ],
+diff --git a/OynaAdminPanel-main/Backend/src/auth/auth.service.ts b/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
+index 061f1cb..132de81 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
+@@ -14,20 +14,33 @@ import * as admin from 'firebase-admin';
+ import * as crypto from 'crypto';
+ import { User, UserDocument } from './schemas/user.schema';
+ import { BrevoService } from './brevo.service';
++import { ConfigService } from '@nestjs/config';
+ 
+ type UserWithoutPassword = Omit<User, 'passwordHash'> & { _id: string };
+ 
+ @Injectable()
+ export class AuthService implements OnModuleInit {
+   private readonly logger = new Logger(AuthService.name);
++  private refreshSecret!: string;
+ 
+   constructor(
+     @InjectModel(User.name) private userModel: Model<UserDocument>,
+     private jwtService: JwtService,
+     private brevoService: BrevoService,
++    private configService: ConfigService,
+   ) { }
+ 
+   async onModuleInit() {
++    // Validate required secrets at startup
++    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
++    if (!refreshSecret) {
++      throw new Error(
++        'FATAL: JWT_REFRESH_SECRET environment variable is not set. ' +
++        'Please add it to your .env file. The application cannot start without it.',
++      );
++    }
++    this.refreshSecret = refreshSecret;
++
+     const superAdmin = await this.userModel
+       .findOne({ role: 'SUPER_ADMIN' })
+       .exec();
+@@ -406,8 +419,19 @@ export class AuthService implements OnModuleInit {
+       displayName: user.displayName,
+       role: user.role,
+     };
++
++    const refreshPayload = { sub: user._id };
++    const refresh_token = this.jwtService.sign(refreshPayload, {
++      secret: this.refreshSecret,
++      expiresIn: '30d',
++    });
++
++    const refreshTokenHash = await bcrypt.hash(refresh_token, 10);
++    await this.userModel.findByIdAndUpdate(user._id, { refreshTokenHash }).exec();
++
+     return {
+       access_token: this.jwtService.sign(payload),
++      refresh_token,
+       user: {
+         email: user.email,
+         displayName: user.displayName,
+@@ -417,6 +441,38 @@ export class AuthService implements OnModuleInit {
+     };
+   }
+ 
++  async refreshTokens(refreshToken: string) {
++    try {
++      const payload = await this.jwtService.verifyAsync(refreshToken, {
++        secret: this.refreshSecret,
++      });
++
++      const user = await this.userModel.findById(payload.sub).exec();
++      if (!user || !user.refreshTokenHash || user.status !== 'ACTIVE') {
++        throw new UnauthorizedException('Giriş icazəsi yoxdur və ya istifadəçi aktiv deyil.');
++      }
++
++      const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
++      if (!isMatch) {
++        throw new UnauthorizedException('Giriş icazəsi yoxdur.');
++      }
++
++      return this.login({
++        _id: user._id.toString(),
++        email: user.email,
++        displayName: user.displayName,
++        role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
++      });
++    } catch (err) {
++      throw new UnauthorizedException('Token etibarsız və ya vaxtı bitib.');
++    }
++  }
++
++  async logout(userId: string) {
++    await this.userModel.findByIdAndUpdate(userId, { $unset: { refreshTokenHash: 1 } }).exec();
++    return { success: true };
++  }
++
+   async deleteAdmin(id: string, currentUserId: string) {
+     if (id === currentUserId) {
+       throw new ForbiddenException('Öz hesabınızı silə bilməzsiniz.');
+diff --git a/OynaAdminPanel-main/Backend/src/auth/dto/auth.dto.ts b/OynaAdminPanel-main/Backend/src/auth/dto/auth.dto.ts
+index bc36ace..b20ecdc 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/dto/auth.dto.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/dto/auth.dto.ts
+@@ -1,4 +1,4 @@
+-import { IsEmail, IsString, MinLength, MaxLength, Length } from 'class-validator';
++import { IsEmail, IsString, MinLength, MaxLength, Length, IsOptional } from 'class-validator';
+ 
+ export class LoginDto {
+   @IsEmail({}, { message: 'Düzgün e-mail daxil edin.' })
+@@ -86,3 +86,15 @@ export class ResetAdminPasswordDto {
+   password: string;
+ }
+ 
++export class UpdateProfileDto {
++  @IsOptional()
++  @IsString({ message: 'Ad mətn tipli olmalıdır.' })
++  @MinLength(2, { message: 'Ad ən az 2 simvol olmalıdır.' })
++  displayName?: string;
++}
++
++export class RefreshTokenDto {
++  @IsString({ message: 'Refresh token mətn tipli olmalıdır.' })
++  refreshToken: string;
++}
++
+diff --git a/OynaAdminPanel-main/Backend/src/auth/schemas/user.schema.ts b/OynaAdminPanel-main/Backend/src/auth/schemas/user.schema.ts
+index c65eb01..971d309 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/schemas/user.schema.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/schemas/user.schema.ts
+@@ -41,6 +41,9 @@ export class User {
+ 
+   @Prop()
+   resetCodeExpiresAt?: Date;
++
++  @Prop()
++  refreshTokenHash?: string;
+ }
+ 
+ export const UserSchema = SchemaFactory.createForClass(User);
+diff --git a/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts b/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
+index f01b07f..004718a 100644
+--- a/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
++++ b/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
+@@ -59,7 +59,9 @@ export class UpdateVenueDto {
+   bookingRules?: Venue['bookingRules'];
+ 
+   @IsOptional()
+-  @IsString()
++  @IsEnum(['DRAFT', 'ACTIVE', 'INACTIVE', 'PUBLISHED'], {
++    message: 'Status yalnız DRAFT, ACTIVE, INACTIVE və ya PUBLISHED ola bilər.',
++  })
+   status?: string;
+ 
+   @IsOptional()

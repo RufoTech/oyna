@@ -98,7 +98,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
                   isActive: _currentIndex == 0,
                   onDetailOverlayChanged: _onDetailOverlayChanged,
                 ),
-                const SearchScreen(),
+                SearchScreen(isActive: _currentIndex == 1),
                 const FavoritesScreen(),
                 ProfileScreen(onNavigateToFavorites: () => _onTabSelected(2)),
               ],

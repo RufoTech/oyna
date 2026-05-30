@@ -85,7 +85,7 @@ class _VenueDetailScreenState extends State<VenueDetailScreen> {
         statusBarColor: Colors.transparent,
       ),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF9F9FE),
+        backgroundColor: AppColors.scaffoldBackground,
         body: Stack(
           children: [
             // Scrollable Body

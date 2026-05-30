@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, Length } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, Length, IsOptional } from 'class-validator';
 
 export class LoginDto {
   @IsEmail({}, { message: 'Düzgün e-mail daxil edin.' })
@@ -84,5 +84,17 @@ export class ResetAdminPasswordDto {
   @IsString({ message: 'Şifrə mətn tipli olmalıdır.' })
   @MinLength(8, { message: 'Şifrə ən az 8 simvol olmalıdır.' })
   password: string;
+}
+
+export class UpdateProfileDto {
+  @IsOptional()
+  @IsString({ message: 'Ad mətn tipli olmalıdır.' })
+  @MinLength(2, { message: 'Ad ən az 2 simvol olmalıdır.' })
+  displayName?: string;
+}
+
+export class RefreshTokenDto {
+  @IsString({ message: 'Refresh token mətn tipli olmalıdır.' })
+  refreshToken: string;
 }
 

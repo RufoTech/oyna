@@ -32,7 +32,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> with Automati
     final venuesState = ref.watch(venuesProvider);
 
     return Container(
-      color: const Color(0xFFF9F9FE),
+      color: AppColors.scaffoldBackground,
       child: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(

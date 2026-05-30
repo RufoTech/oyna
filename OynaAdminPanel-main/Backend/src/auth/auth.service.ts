@@ -14,20 +14,33 @@ import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { BrevoService } from './brevo.service';
+import { ConfigService } from '@nestjs/config';
 
 type UserWithoutPassword = Omit<User, 'passwordHash'> & { _id: string };
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
+  private refreshSecret!: string;
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private jwtService: JwtService,
     private brevoService: BrevoService,
+    private configService: ConfigService,
   ) { }
 
   async onModuleInit() {
+    // Validate required secrets at startup
+    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    if (!refreshSecret) {
+      throw new Error(
+        'FATAL: JWT_REFRESH_SECRET environment variable is not set. ' +
+        'Please add it to your .env file. The application cannot start without it.',
+      );
+    }
+    this.refreshSecret = refreshSecret;
+
     const superAdmin = await this.userModel
       .findOne({ role: 'SUPER_ADMIN' })
       .exec();
@@ -406,8 +419,19 @@ export class AuthService implements OnModuleInit {
       displayName: user.displayName,
       role: user.role,
     };
+
+    const refreshPayload = { sub: user._id };
+    const refresh_token = this.jwtService.sign(refreshPayload, {
+      secret: this.refreshSecret,
+      expiresIn: '30d',
+    });
+
+    const refreshTokenHash = await bcrypt.hash(refresh_token, 10);
+    await this.userModel.findByIdAndUpdate(user._id, { refreshTokenHash }).exec();
+
     return {
       access_token: this.jwtService.sign(payload),
+      refresh_token,
       user: {
         email: user.email,
         displayName: user.displayName,
@@ -415,6 +439,38 @@ export class AuthService implements OnModuleInit {
         _id: user._id,
       },
     };
+  }
+
+  async refreshTokens(refreshToken: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.refreshSecret,
+      });
+
+      const user = await this.userModel.findById(payload.sub).exec();
+      if (!user || !user.refreshTokenHash || user.status !== 'ACTIVE') {
+        throw new UnauthorizedException('Giriş icazəsi yoxdur və ya istifadəçi aktiv deyil.');
+      }
+
+      const isMatch = await bcrypt.compare(refreshToken, user.refreshTokenHash);
+      if (!isMatch) {
+        throw new UnauthorizedException('Giriş icazəsi yoxdur.');
+      }
+
+      return this.login({
+        _id: user._id.toString(),
+        email: user.email,
+        displayName: user.displayName,
+        role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
+      });
+    } catch (err) {
+      throw new UnauthorizedException('Token etibarsız və ya vaxtı bitib.');
+    }
+  }
+
+  async logout(userId: string) {
+    await this.userModel.findByIdAndUpdate(userId, { $unset: { refreshTokenHash: 1 } }).exec();
+    return { success: true };
   }
 
   async deleteAdmin(id: string, currentUserId: string) {

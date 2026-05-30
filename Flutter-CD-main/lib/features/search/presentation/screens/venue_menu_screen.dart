@@ -7,6 +7,8 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/models/venue_model.dart';
 import '../../../../core/models/food_model.dart';
 import '../../../../core/providers/foods_provider.dart';
+import '../../../../core/constants/app_config.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 final selectedFoodCategoryProvider = StateProvider<String>((ref) => 'Hamısı');
 
@@ -204,10 +206,22 @@ class _MenuItemCard extends StatelessWidget {
                     width: 80,
                     height: 80,
                     color: AppColors.surfaceContainer,
-                    child: Image.network(
-                      imageUrl,
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl.startsWith('http') ? imageUrl : (AppConfig.formatImageUrl(imageUrl) ?? ''),
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.coffee),
+                      memCacheWidth: 240,
+                      memCacheHeight: 240,
+                      placeholder: (context, url) => Container(
+                        color: AppColors.surfaceContainer,
+                        child: const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                      errorWidget: (context, url, error) => const Icon(Icons.coffee),
                     ),
                   ),
                 ),

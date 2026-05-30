@@ -71,7 +71,7 @@ class _VenueHeroSectionState extends State<VenueHeroSection> {
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
-                    colors: [const Color(0xFFF9F9FE), Colors.transparent],
+                    colors: [AppColors.scaffoldBackground, Colors.transparent],
                     stops: const [0.0, 0.4],
                   ),
                 ),

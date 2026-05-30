@@ -1,0 +1,1459 @@
+diff --git a/OynaAdminPanel-main/Backend/src/auth/auth.service.ts b/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
+index c05f571..061f1cb 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/auth.service.ts
+@@ -11,6 +11,7 @@ import { Model } from 'mongoose';
+ import * as bcrypt from 'bcryptjs';
+ import { JwtService } from '@nestjs/jwt';
+ import * as admin from 'firebase-admin';
++import * as crypto from 'crypto';
+ import { User, UserDocument } from './schemas/user.schema';
+ import { BrevoService } from './brevo.service';
+ 
+@@ -51,7 +52,10 @@ export class AuthService implements OnModuleInit {
+     if (!password || password.length < 8) {
+       throw new BadRequestException('Şifrə ən azı 8 simvoldan ibarət olmalıdır.');
+     }
+-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9\W]/.test(password)) {
++    if (/\s/.test(password)) {
++      throw new BadRequestException('Şifrədə boşluq (whitespace) simvollarından istifadə edilə bilməz.');
++    }
++    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || (!/[0-9]/.test(password) && !/[!@#$%^&*(),.?":{}|<>]/.test(password))) {
+       throw new BadRequestException(
+         'Şifrədə ən azı bir böyük hərf, bir kiçik hərf və bir rəqəm və ya xüsusi simvol olmalıdır.',
+       );
+@@ -60,7 +64,7 @@ export class AuthService implements OnModuleInit {
+ 
+   // ── Helper: Generate 6-digit OTP ──
+   private generateOtp(): string {
+-    return Math.floor(100000 + Math.random() * 900000).toString();
++    return crypto.randomInt(100000, 1000000).toString();
+   }
+ 
+   // ══════════════════════════════════════════════════════════════
+@@ -162,7 +166,7 @@ export class AuthService implements OnModuleInit {
+       _id: user._id.toString(),
+       email: user.email,
+       displayName: user.displayName,
+-      role: user.role as any,
++      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
+     });
+   }
+ 
+@@ -231,7 +235,7 @@ export class AuthService implements OnModuleInit {
+       _id: user._id.toString(),
+       email: user.email,
+       displayName: user.displayName,
+-      role: user.role as any,
++      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
+     });
+   }
+ 
+@@ -518,7 +522,7 @@ export class AuthService implements OnModuleInit {
+       _id: user._id.toString(),
+       email: user.email,
+       displayName: user.displayName,
+-      role: user.role as any,
++      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
+     });
+   }
+ 
+@@ -564,7 +568,7 @@ export class AuthService implements OnModuleInit {
+       _id: user._id.toString(),
+       email: user.email,
+       displayName: user.displayName,
+-      role: user.role as any,
++      role: user.role as 'ADMIN' | 'SUPER_ADMIN' | 'USER',
+     });
+   }
+ }
+diff --git a/OynaAdminPanel-main/Backend/src/auth/jwt-auth.guard.ts b/OynaAdminPanel-main/Backend/src/auth/jwt-auth.guard.ts
+index 2d7c1b3..7c208b4 100644
+--- a/OynaAdminPanel-main/Backend/src/auth/jwt-auth.guard.ts
++++ b/OynaAdminPanel-main/Backend/src/auth/jwt-auth.guard.ts
+@@ -9,12 +9,14 @@ import { InjectModel } from '@nestjs/mongoose';
+ import { Model } from 'mongoose';
+ import { Request } from 'express';
+ import { User, UserDocument } from './schemas/user.schema';
++import { RedisService } from '../redis/redis.service';
+ 
+ @Injectable()
+ export class JwtAuthGuard implements CanActivate {
+   constructor(
+     private jwtService: JwtService,
+     @InjectModel(User.name) private userModel: Model<UserDocument>,
++    private redisService: RedisService,
+   ) {}
+ 
+   async canActivate(context: ExecutionContext): Promise<boolean> {
+@@ -28,18 +30,38 @@ export class JwtAuthGuard implements CanActivate {
+     try {
+       const payload = await this.jwtService.verifyAsync(token);
+       
+-      // Dynamic blacklisting & privilege validation:
+-      const dbUser = await this.userModel
+-        .findById(payload.sub)
+-        .select('status role')
+-        .lean()
+-        .exec();
++      // Dynamic blacklisting & privilege validation with Redis caching (15 seconds TTL)
++      const cacheKey = `user:status-role:${payload.sub}`;
++      let dbUser: { status: string; role: string } | null = null;
++      
++      try {
++        dbUser = await this.redisService.get<{ status: string; role: string }>(cacheKey);
++      } catch (err) {
++        // Ignore Redis read errors, fallback to DB query
++      }
++
++      if (!dbUser) {
++        const doc = await this.userModel
++          .findById(payload.sub)
++          .select('status role')
++          .lean()
++          .exec();
++
++        if (doc) {
++          dbUser = { status: doc.status, role: doc.role };
++          try {
++            await this.redisService.set(cacheKey, dbUser, 15);
++          } catch (err) {
++            // Ignore Redis write errors
++          }
++        }
++      }
+ 
+       if (!dbUser || dbUser.status !== 'ACTIVE') {
+         throw new UnauthorizedException('İstifadəçi hesabı aktiv deyil və ya silinib.');
+       }
+ 
+-      // Add verified user details to request object, using fresh role from DB
++      // Add verified user details to request object, using fresh role
+       request['user'] = {
+         ...payload,
+         role: dbUser.role,
+diff --git a/OynaAdminPanel-main/Backend/src/common/filters/all-exceptions.filter.ts b/OynaAdminPanel-main/Backend/src/common/filters/all-exceptions.filter.ts
+new file mode 100644
+index 0000000..a94a154
+--- /dev/null
++++ b/OynaAdminPanel-main/Backend/src/common/filters/all-exceptions.filter.ts
+@@ -0,0 +1,62 @@
++import {
++  ExceptionFilter,
++  Catch,
++  ArgumentsHost,
++  HttpException,
++  HttpStatus,
++  Logger,
++} from '@nestjs/common';
++import { HttpAdapterHost } from '@nestjs/core';
++
++@Catch()
++export class AllExceptionsFilter implements ExceptionFilter {
++  private readonly logger = new Logger('AllExceptionsFilter');
++
++  constructor(private readonly httpAdapterHost: HttpAdapterHost) {}
++
++  catch(exception: unknown, host: ArgumentsHost): void {
++    // In certain situations `httpAdapterHost` might not be available yet
++    const { httpAdapter } = this.httpAdapterHost;
++
++    const ctx = host.switchToHttp();
++
++    const httpStatus =
++      exception instanceof HttpException
++        ? exception.getStatus()
++        : HttpStatus.INTERNAL_SERVER_ERROR;
++
++    const exceptionResponse =
++      exception instanceof HttpException
++        ? exception.getResponse()
++        : null;
++
++    const message =
++      exception instanceof HttpException
++        ? typeof exceptionResponse === 'object' && exceptionResponse !== null
++          ? (exceptionResponse as { message?: unknown }).message || exception.message
++          : exception.message
++        : 'Daxili server xətası baş verdi.';
++
++    const responseBody = {
++      statusCode: httpStatus,
++      timestamp: new Date().toISOString(),
++      path: httpAdapter.getRequestUrl(ctx.getRequest()),
++      message: Array.isArray(message) ? message[0] : message,
++    };
++
++    // Log the error
++    if (httpStatus >= 500) {
++      this.logger.error(
++        `Unhandled Exception at ${responseBody.path}: ${
++          exception instanceof Error ? exception.stack : JSON.stringify(exception)
++        }`,
++      );
++    } else {
++      this.logger.warn(
++        `Client Warning at ${responseBody.path}: ${message}`,
++      );
++    }
++
++    httpAdapter.reply(ctx.getResponse(), responseBody, httpStatus);
++  }
++}
+diff --git a/OynaAdminPanel-main/Backend/src/common/interceptors/timeout.interceptor.ts b/OynaAdminPanel-main/Backend/src/common/interceptors/timeout.interceptor.ts
+new file mode 100644
+index 0000000..b8bebd4
+--- /dev/null
++++ b/OynaAdminPanel-main/Backend/src/common/interceptors/timeout.interceptor.ts
+@@ -0,0 +1,24 @@
++import {
++  Injectable,
++  NestInterceptor,
++  ExecutionContext,
++  CallHandler,
++  RequestTimeoutException,
++} from '@nestjs/common';
++import { Observable, throwError, TimeoutError } from 'rxjs';
++import { catchError, timeout } from 'rxjs/operators';
++
++@Injectable()
++export class TimeoutInterceptor implements NestInterceptor {
++  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
++    return next.handle().pipe(
++      timeout(15000), // 15 seconds timeout
++      catchError((err) => {
++        if (err instanceof TimeoutError) {
++          return throwError(() => new RequestTimeoutException('Sorğu vaxt limiti keçdi (Timeout).'));
++        }
++        return throwError(() => err);
++      }),
++    );
++  }
++}
+diff --git a/OynaAdminPanel-main/Backend/src/common/parse-object-id.pipe.ts b/OynaAdminPanel-main/Backend/src/common/parse-object-id.pipe.ts
+index d0e9730..98438f6 100644
+--- a/OynaAdminPanel-main/Backend/src/common/parse-object-id.pipe.ts
++++ b/OynaAdminPanel-main/Backend/src/common/parse-object-id.pipe.ts
+@@ -2,12 +2,12 @@ import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+ import { Types } from 'mongoose';
+ 
+ @Injectable()
+-export class ParseObjectIdPipe implements PipeTransform<any, Types.ObjectId> {
+-  transform(value: any): Types.ObjectId {
+-    const isValid = Types.ObjectId.isValid(value);
++export class ParseObjectIdPipe implements PipeTransform<unknown, Types.ObjectId> {
++  transform(value: unknown): Types.ObjectId {
++    const isValid = typeof value === 'string' && Types.ObjectId.isValid(value);
+     if (!isValid) {
+       throw new BadRequestException('Göndərilən ID formatı keçərsizdir.');
+     }
+-    return new Types.ObjectId(value);
++    return new Types.ObjectId(value as string);
+   }
+ }
+diff --git a/OynaAdminPanel-main/Backend/src/dashboard/dashboard.service.ts b/OynaAdminPanel-main/Backend/src/dashboard/dashboard.service.ts
+index 874bd9e..e5326c8 100644
+--- a/OynaAdminPanel-main/Backend/src/dashboard/dashboard.service.ts
++++ b/OynaAdminPanel-main/Backend/src/dashboard/dashboard.service.ts
+@@ -20,7 +20,7 @@ export class DashboardService {
+   async getDashboardStats(adminIdStr: string) {
+     const cacheKey = `dashboard:stats:${adminIdStr}`;
+     try {
+-      const cached = await this.redisService.get<any>(cacheKey);
++      const cached = await this.redisService.get<unknown>(cacheKey);
+       if (cached) {
+         return cached;
+       }
+@@ -118,7 +118,7 @@ export class DashboardService {
+     }
+ 
+     // 6. Format recent bookings
+-    const formattedBookings = recentBookings.map((r: any) => ({
++    const formattedBookings = (recentBookings as unknown as (Reservation & { _id: Types.ObjectId })[]).map((r) => ({
+       _id: r._id,
+       userName: r.userName,
+       venueName: r.venueName,
+diff --git a/OynaAdminPanel-main/Backend/src/foods/dto/foods.dto.ts b/OynaAdminPanel-main/Backend/src/foods/dto/foods.dto.ts
+new file mode 100644
+index 0000000..4e8cc19
+--- /dev/null
++++ b/OynaAdminPanel-main/Backend/src/foods/dto/foods.dto.ts
+@@ -0,0 +1,44 @@
++import { IsString, IsNumber, Min, IsOptional } from 'class-validator';
++
++export class CreateFoodDto {
++  @IsString({ message: 'Ad mətn tipli olmalıdır.' })
++  name: string;
++
++  @IsString({ message: 'Kateqoriya mətn tipli olmalıdır.' })
++  category: string;
++
++  @IsNumber({}, { message: 'Qiymət rəqəm tipli olmalıdır.' })
++  @Min(0, { message: 'Qiymət mənfi ola bilməz.' })
++  price: number;
++
++  @IsOptional()
++  @IsString({ message: 'Təsvir mətn tipli olmalıdır.' })
++  description?: string;
++
++  @IsOptional()
++  @IsString({ message: 'Şəkil linki mətn tipli olmalıdır.' })
++  image?: string;
++}
++
++export class UpdateFoodDto {
++  @IsOptional()
++  @IsString({ message: 'Ad mətn tipli olmalıdır.' })
++  name?: string;
++
++  @IsOptional()
++  @IsString({ message: 'Kateqoriya mətn tipli olmalıdır.' })
++  category?: string;
++
++  @IsOptional()
++  @IsNumber({}, { message: 'Qiymət rəqəm tipli olmalıdır.' })
++  @Min(0, { message: 'Qiymət mənfi ola bilməz.' })
++  price?: number;
++
++  @IsOptional()
++  @IsString({ message: 'Təsvir mətn tipli olmalıdır.' })
++  description?: string;
++
++  @IsOptional()
++  @IsString({ message: 'Şəkil linki mətn tipli olmalıdır.' })
++  image?: string;
++}
+diff --git a/OynaAdminPanel-main/Backend/src/foods/foods.controller.ts b/OynaAdminPanel-main/Backend/src/foods/foods.controller.ts
+index c5beda3..b87c076 100644
+--- a/OynaAdminPanel-main/Backend/src/foods/foods.controller.ts
++++ b/OynaAdminPanel-main/Backend/src/foods/foods.controller.ts
+@@ -15,7 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../auth/roles.decorator';
+ import { FoodsService } from './foods.service';
+-import { Food } from './schemas/food.schema';
++import { CreateFoodDto, UpdateFoodDto } from './dto/foods.dto';
+ import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+ 
+ interface AuthRequest extends Request {
+@@ -29,7 +29,7 @@ export class FoodsController {
+   constructor(private readonly foodsService: FoodsService) {}
+ 
+   @Post()
+-  create(@Body() dto: Partial<Food>, @Req() req: AuthRequest) {
++  create(@Body() dto: CreateFoodDto, @Req() req: AuthRequest) {
+     return this.foodsService.create({
+       ...dto,
+       adminId: new Types.ObjectId(req.user.sub),
+@@ -49,7 +49,7 @@ export class FoodsController {
+   @Patch(':id')
+   update(
+     @Param('id', ParseObjectIdPipe) id: string,
+-    @Body() dto: Partial<Food>,
++    @Body() dto: UpdateFoodDto,
+     @Req() req: AuthRequest,
+   ) {
+     return this.foodsService.update(id, dto, req.user.sub);
+diff --git a/OynaAdminPanel-main/Backend/src/foods/foods.service.ts b/OynaAdminPanel-main/Backend/src/foods/foods.service.ts
+index ba6810f..823d46f 100644
+--- a/OynaAdminPanel-main/Backend/src/foods/foods.service.ts
++++ b/OynaAdminPanel-main/Backend/src/foods/foods.service.ts
+@@ -57,7 +57,7 @@ export class FoodsService {
+     // 3. Redis-ə yaz
+     await this.redisService.set(cacheKey, foods, CACHE_TTL.LIST);
+ 
+-    return foods as any;
++    return foods as unknown as Food[];
+   }
+ 
+   async findOne(id: string, adminId: string): Promise<Food> {
+@@ -68,7 +68,7 @@ export class FoodsService {
+     if (!food) {
+       throw new NotFoundException('Food tapilmadi.');
+     }
+-    return food as any;
++    return food as unknown as Food;
+   }
+ 
+   async update(
+diff --git a/OynaAdminPanel-main/Backend/src/main.ts b/OynaAdminPanel-main/Backend/src/main.ts
+index 63dd676..11a33a7 100644
+--- a/OynaAdminPanel-main/Backend/src/main.ts
++++ b/OynaAdminPanel-main/Backend/src/main.ts
+@@ -1,14 +1,22 @@
+-import { NestFactory } from '@nestjs/core';
++import { NestFactory, HttpAdapterHost } from '@nestjs/core';
+ import { ValidationPipe } from '@nestjs/common';
+ import { AppModule } from './app.module';
+ import compression from 'compression';
+ import helmet from 'helmet';
++import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
++import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
+ 
+ async function bootstrap() {
+   const app = await NestFactory.create(AppModule);
++  
+   app.use(helmet());
+   app.enableCors();
+   app.use(compression());
++
++  const httpAdapterHost = app.get(HttpAdapterHost);
++  app.useGlobalFilters(new AllExceptionsFilter(httpAdapterHost));
++  app.useGlobalInterceptors(new TimeoutInterceptor());
++
+   app.useGlobalPipes(
+     new ValidationPipe({
+       whitelist: true,
+diff --git a/OynaAdminPanel-main/Backend/src/redis/redis.service.ts b/OynaAdminPanel-main/Backend/src/redis/redis.service.ts
+index 19ec0d6..3914e38 100644
+--- a/OynaAdminPanel-main/Backend/src/redis/redis.service.ts
++++ b/OynaAdminPanel-main/Backend/src/redis/redis.service.ts
+@@ -48,7 +48,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
+   }
+ 
+   /** Helper to set cache */
+-  async set(key: string, value: any, ttlSeconds?: number): Promise<void> {
++  async set(key: string, value: unknown, ttlSeconds?: number): Promise<void> {
+     const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+     if (ttlSeconds) {
+       await this.client.set(key, stringValue, 'EX', ttlSeconds);
+@@ -101,18 +101,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
+     return deleted;
+   }
+ 
+-  /** Distributed lock — SET NX with atomic expiration */
++  /** Distributed lock — SET NX with atomic expiration (Fail-Closed) */
+   async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+     if (!this.client) {
+-      this.logger.warn(`Redis client not initialized. Allowing lock acquisition by default for key: ${key}`);
+-      return true;
++      this.logger.warn(`Redis client not initialized. Rejecting lock acquisition for key: ${key}`);
++      return false;
+     }
+     try {
+       const result = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
+       return result === 'OK';
+     } catch (err) {
+       this.logger.error(`Error acquiring lock for key ${key}:`, err.message);
+-      return true; // Fallback to allowing execution if Redis fails
++      return false; // Fail-closed
+     }
+   }
+ 
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/auto-reject.task.ts b/OynaAdminPanel-main/Backend/src/reservations/auto-reject.task.ts
+index 29754b9..2157e9e 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/auto-reject.task.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/auto-reject.task.ts
+@@ -49,7 +49,7 @@ export class AutoRejectTask {
+       'Vaxtında gəlmədiyiniz üçün ləğv olundu';
+ 
+     // 2. Bulk update — single MongoDB operation per status type
+-    const bulkOps: Promise<any>[] = [];
++    const bulkOps: Promise<unknown>[] = [];
+ 
+     if (expiredPending.length > 0) {
+       const pendingIds = expiredPending.map((r) => r._id);
+@@ -87,14 +87,18 @@ export class AutoRejectTask {
+       venueTableMap.get(vId)!.add(r.tableId);
+     }
+ 
+-    // Sync table statuses and emit layout updates per venue (not per reservation)
+-    for (const [venueId, tableIds] of venueTableMap) {
+-      for (const tableId of tableIds) {
+-        await this.venuesService.syncTableStatus(venueId, tableId, 'rejected');
+-      }
++    // Sync table statuses and emit layout updates per venue in parallel (non-blocking)
++    const venueSyncOps = Array.from(venueTableMap.entries()).map(async ([venueId, tableIds]) => {
++      await Promise.all(
++        Array.from(tableIds).map((tableId) =>
++          this.venuesService.syncTableStatus(venueId, tableId, 'rejected'),
++        ),
++      );
+       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
+       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
+-    }
++    });
++
++    await Promise.all(venueSyncOps);
+ 
+     // 4. Send notifications in parallel (fire-and-forget with error handling)
+     const notifications = allExpired.map((r) => {
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/dto/reservations.dto.ts b/OynaAdminPanel-main/Backend/src/reservations/dto/reservations.dto.ts
+index e67a9a1..36f3a58 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/dto/reservations.dto.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/dto/reservations.dto.ts
+@@ -1,4 +1,4 @@
+-import { IsString, IsEnum, IsOptional } from 'class-validator';
++import { IsString, IsEnum, IsOptional, IsNumber, Min } from 'class-validator';
+ 
+ export class UpdateReservationStatusDto {
+   @IsEnum(['accepted', 'rejected', 'canceled'], {
+@@ -18,3 +18,62 @@ export class CheckInDto {
+   @IsString({ message: 'Məkan ID-si mətn tipli olmalıdır.' })
+   venueId: string;
+ }
++
++export class CreateReservationDto {
++  @IsString({ message: 'Məkan ID-si mətn tipli olmalıdır.' })
++  venueId: string;
++
++  @IsString({ message: 'Məkan adı mətn tipli olmalıdır.' })
++  venueName: string;
++
++  @IsString({ message: 'İstifadəçi adı mətn tipli olmalıdır.' })
++  userName: string;
++
++  @IsOptional()
++  @IsString({ message: 'İstifadəçi e-maili mətn tipli olmalıdır.' })
++  userEmail?: string;
++
++  @IsString({ message: 'Telefon nömrəsi mətn tipli olmalıdır.' })
++  userPhone: string;
++
++  @IsString({ message: 'Tarix mətn tipli olmalıdır.' })
++  date: string;
++
++  @IsString({ message: 'Vaxt mətn tipli olmalıdır.' })
++  time: string;
++
++  @IsOptional()
++  @IsString({ message: 'Tier başlığı mətn tipli olmalıdır.' })
++  tierTitle?: string;
++
++  @IsOptional()
++  @IsNumber({}, { message: 'Tier qiyməti rəqəm tipli olmalıdır.' })
++  @Min(0)
++  tierPrice?: number;
++
++  @IsOptional()
++  @IsString()
++  description?: string;
++
++  @IsOptional()
++  @IsString()
++  tableId?: string;
++
++  @IsOptional()
++  @IsString()
++  tierId?: string;
++
++  // Let client send userId but server will overwrite it using request context
++  @IsOptional()
++  @IsString()
++  userId?: string;
++
++  @IsOptional()
++  @IsString()
++  tableName?: string;
++}
++
++export class RegisterFcmTokenDto {
++  @IsString({ message: 'FCM Token mətn tipli olmalıdır.' })
++  fcmToken: string;
++}
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/public-reservations.controller.ts b/OynaAdminPanel-main/Backend/src/reservations/public-reservations.controller.ts
+index e456d1c..073f5ee 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/public-reservations.controller.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/public-reservations.controller.ts
+@@ -1,12 +1,19 @@
+ import { Controller, Get, Post, Body, Query, Patch, Param, ForbiddenException, Inject, forwardRef, UseGuards, Req, NotFoundException } from '@nestjs/common';
++import { Request } from 'express';
+ import { ReservationsService } from './reservations.service';
+ import { ReservationsGateway } from './reservations.gateway';
+ import { PushNotificationService } from './push-notification.service';
+-import { Reservation } from './schemas/reservation.schema';
++import { CreateReservationDto, RegisterFcmTokenDto } from './dto/reservations.dto';
+ import { VenuesService } from '../venues/venues.service';
++import { Venue, LayoutItem, OperatingScheduleDay } from '../venues/schemas/venue.schema';
++import { Reservation } from './schemas/reservation.schema';
+ import { RedisService } from '../redis/redis.service';
+ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+ 
++interface AuthRequest extends Request {
++  user: { sub: string; email: string; displayName?: string; role: string };
++}
++
+ /**
+  * Public endpoints for the Flutter mobile app.
+  * Secured with JWT guard.
+@@ -23,7 +30,7 @@ export class PublicReservationsController {
+     private readonly redisService: RedisService,
+   ) {}
+ 
+-  private isVenueOpenByClock(venue: any): boolean {
++  private isVenueOpenByClock(venue: Venue): boolean {
+     if (!venue.operatingHours) return true;
+     if (venue.operatingHours.is24_7) return true;
+ 
+@@ -36,7 +43,9 @@ export class PublicReservationsController {
+     const schedule = venue.operatingHours.schedule;
+     if (!schedule) return true;
+     
+-    const daySchedule = typeof schedule.get === 'function' ? schedule.get(todayStr) : schedule[todayStr];
++    const daySchedule = typeof (schedule as { get?: (k: string) => unknown }).get === 'function'
++      ? (schedule as unknown as { get: (k: string) => OperatingScheduleDay }).get(todayStr)
++      : schedule[todayStr];
+     
+     if (!daySchedule || daySchedule.closed) return false;
+     if (!daySchedule.open || !daySchedule.close) return true;
+@@ -62,8 +71,8 @@ export class PublicReservationsController {
+   /** POST /public/reservations — Create a new reservation */
+   @Post()
+   async create(
+-    @Body() dto: Partial<Reservation> & { tableId?: string; tierId?: string },
+-    @Req() req: any,
++    @Body() dto: CreateReservationDto,
++    @Req() req: AuthRequest,
+   ) {
+     dto.userId = req.user.sub;
+     // Server-side guard: check venue is still accepting reservations
+@@ -100,7 +109,7 @@ export class PublicReservationsController {
+         acquiredLockKey = lockKey;
+ 
+         const layout = await this.venuesService.getPublicLayout(venueId);
+-        const table = (layout?.items || []).find((item: any) => item.id === dto.tableId);
++        const table = (layout?.items || []).find((item: LayoutItem) => item.id === dto.tableId);
+         
+         if (!table) {
+           throw new ForbiddenException('TABLE_NOT_FOUND');
+@@ -112,7 +121,7 @@ export class PublicReservationsController {
+         dto.tableName = table.name;
+       } else if (dto.tierId && venueId) {
+         // YOL 2: User xidmət düyməsindən seçib — random boş masa tap (preventing race condition via retries)
+-        let lockedTable: any = null;
++        let lockedTable: LayoutItem | null = null;
+         const maxRetries = 3;
+ 
+         for (let i = 0; i < maxRetries; i++) {
+@@ -139,9 +148,9 @@ export class PublicReservationsController {
+       }
+       
+       // tierId-ni reservation-a saxlamağa ehtiyac yoxdur, silinir
+-      delete (dto as any).tierId;
++      delete (dto as CreateReservationDto & { tierId?: string }).tierId;
+ 
+-      const reservation = await this.reservationsService.create(dto);
++      const reservation = await this.reservationsService.create(dto as unknown as Partial<Reservation>);
+ 
+       // Sync table status to 'reserved' in venue layout
+       if (reservation.tableId && venueId) {
+@@ -168,7 +177,7 @@ export class PublicReservationsController {
+ 
+   /** GET /public/reservations/discovered — Get user's discovered venues */
+   @Get('discovered')
+-  async findDiscoveredVenues(@Req() req: any) {
++  async findDiscoveredVenues(@Req() req: AuthRequest) {
+     const userId = req.user.sub;
+     const venueIds = await this.reservationsService.findDiscoveredVenueIds(userId);
+     if (!venueIds.length) return [];
+@@ -178,7 +187,7 @@ export class PublicReservationsController {
+   /** GET /public/reservations — Get user's own reservations */
+   @Get()
+   findByUser(
+-    @Req() req: any,
++    @Req() req: AuthRequest,
+     @Query('page') page?: string,
+     @Query('limit') limit?: string,
+   ) {
+@@ -190,7 +199,7 @@ export class PublicReservationsController {
+ 
+   /** PATCH /public/reservations/:id/cancel — User cancels a reservation */
+   @Patch(':id/cancel')
+-  async cancelReservation(@Param('id') id: string, @Req() req: any) {
++  async cancelReservation(@Param('id') id: string, @Req() req: AuthRequest) {
+     const userId = req.user.sub;
+     // First get the reservation to know the tableId and verify ownership
+     const existing = await this.reservationsService.findOne(id);
+@@ -224,7 +233,7 @@ export class PublicReservationsController {
+ 
+   /** POST /public/reservations/register-token — Register FCM device token */
+   @Post('register-token')
+-  async registerToken(@Body() body: { fcmToken: string }, @Req() req: any) {
++  async registerToken(@Body() body: RegisterFcmTokenDto, @Req() req: AuthRequest) {
+     const userId = req.user.sub;
+     await this.pushNotificationService.registerToken(userId, body.fcmToken);
+     return { success: true };
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/reservations.controller.ts b/OynaAdminPanel-main/Backend/src/reservations/reservations.controller.ts
+index 53bad8f..1704d11 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/reservations.controller.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/reservations.controller.ts
+@@ -21,6 +21,9 @@ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../auth/roles.decorator';
+ import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+ import { UpdateReservationStatusDto, CheckInDto } from './dto/reservations.dto';
++import { Reservation } from './schemas/reservation.schema';
++import { Venue } from '../venues/schemas/venue.schema';
++import { Types } from 'mongoose';
+ 
+ interface AuthRequest extends Request {
+   user: { sub: string; email: string; displayName?: string; role: string };
+@@ -48,7 +51,7 @@ export class ReservationsController {
+   ) {
+     const adminId = req.user.sub;
+     const venues = await this.venuesService.findAll(adminId);
+-    const venueIds = venues.map((v: any) => v._id.toString());
++    const venueIds = (venues as (Venue & { _id: Types.ObjectId })[]).map((v) => v._id.toString());
+     
+     // Convert to numbers, defaults to 1 and 10
+     const p = page ? parseInt(page) || 1 : 1;
+@@ -65,8 +68,8 @@ export class ReservationsController {
+   ) {
+     const adminId = req.user.sub;
+     const venues = await this.venuesService.findAll(adminId);
+-    const venueIds = venues.map((v: any) => v._id.toString());
+-    const validPeriod = ['1d', '1m', '3m', '6m', '1y'].includes(period || '') ? period as any : '1m';
++    const venueIds = (venues as (Venue & { _id: Types.ObjectId })[]).map((v) => v._id.toString());
++    const validPeriod = ['1d', '1m', '3m', '6m', '1y'].includes(period || '') ? (period as '1d' | '1m' | '3m' | '6m' | '1y') : '1m';
+     return this.reservationsService.findByAdminForExport(venueIds, validPeriod);
+   }
+ 
+@@ -86,13 +89,13 @@ export class ReservationsController {
+     // Check if admin has access to the reservation's venue
+     if (originalReservation.venueId) {
+       const venues = await this.venuesService.findAll(adminId);
+-      const hasVenue = venues.some((v: any) => v._id.toString() === originalReservation.venueId.toString());
++      const hasVenue = (venues as (Venue & { _id: Types.ObjectId })[]).some((v) => v._id.toString() === originalReservation.venueId.toString());
+       if (!hasVenue) {
+         throw new ForbiddenException('Bu məkana daxil olmağa hüququnuz yoxdur.');
+       }
+     }
+ 
+-    let finalStatus: any = body.status;
++    let finalStatus: 'accepted' | 'rejected' | 'canceled' | 'awaiting_arrival' | 'arrived' | 'no_show' = body.status as 'accepted' | 'rejected' | 'canceled' | 'awaiting_arrival' | 'arrived' | 'no_show';
+     let graceDeadline: Date | undefined;
+ 
+     if (body.status === 'accepted') {
+@@ -120,32 +123,31 @@ export class ReservationsController {
+     );
+ 
+     // Emit real-time status update to the user who made the reservation
+-    const reservation = updated as any;
+     this.reservationsGateway.emitStatusUpdate(
+-      reservation.userId,
+-      reservation,
++      updated.userId,
++      updated,
+     );
+ 
+     // Send FCM push notification (works even if app is killed)
+     if (body.status === 'accepted') {
+       this.pushNotificationService.sendToUser(
+-        reservation.userId,
++        updated.userId,
+         '✅ Qəbul edildi!',
+-        `${reservation.venueName} sizi ${reservation.time}-da gözləyir.`,
++        `${updated.venueName} sizi ${updated.time}-da gözləyir.`,
+       );
+     } else if (body.status === 'rejected') {
+       const reason = body.rejectReason ? `\nSəbəb: ${body.rejectReason}` : '';
+       this.pushNotificationService.sendToUser(
+-        reservation.userId,
++        updated.userId,
+         '❌ Rezervasiya İmtina Edildi',
+-        `${reservation.venueName} müraciətinizi rədd etdi.${reason}`,
++        `${updated.venueName} müraciətinizi rədd etdi.${reason}`,
+       );
+     }
+ 
+     // Sync table status in venue layout + broadcast to all clients
+-    if (reservation.tableId && reservation.venueId) {
+-      const venueId = reservation.venueId.toString();
+-      await this.venuesService.syncTableStatus(venueId, reservation.tableId, finalStatus);
++    if (updated.tableId && updated.venueId) {
++      const venueId = updated.venueId.toString();
++      await this.venuesService.syncTableStatus(venueId, updated.tableId, finalStatus);
+       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
+       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
+     }
+@@ -163,7 +165,7 @@ export class ReservationsController {
+     
+     // Check if admin has access to this venue
+     const venues = await this.venuesService.findAll(adminId);
+-    const hasVenue = venues.some((v: any) => v._id.toString() === body.venueId);
++    const hasVenue = (venues as (Venue & { _id: Types.ObjectId })[]).some((v) => v._id.toString() === body.venueId);
+     
+     if (!hasVenue) {
+       throw new ForbiddenException('Bu məkana daxil olmağa hüququnuz yoxdur.');
+@@ -172,22 +174,21 @@ export class ReservationsController {
+     const updated = await this.reservationsService.checkIn(body.reservationNumber, body.venueId);
+ 
+     // Emit real-time status update to the user who made the reservation
+-    const reservation = updated as any;
+     this.reservationsGateway.emitStatusUpdate(
+-      reservation.userId,
+-      reservation,
++      updated.userId,
++      updated,
+     );
+ 
+     this.pushNotificationService.sendToUser(
+-      reservation.userId,
++      updated.userId,
+       '🎮 Xoş gəldiniz!',
+-      `${reservation.venueName} — Seansınız başladı. Uğurlar!`,
++      `${updated.venueName} — Seansınız başladı. Uğurlar!`,
+     );
+ 
+     // Sync table status to 'occupied' after check-in
+-    if (reservation.tableId && reservation.venueId) {
+-      const venueId = reservation.venueId.toString();
+-      await this.venuesService.syncTableStatus(venueId, reservation.tableId, 'arrived');
++    if (updated.tableId && updated.venueId) {
++      const venueId = updated.venueId.toString();
++      await this.venuesService.syncTableStatus(venueId, updated.tableId, 'arrived');
+       const updatedLayout = await this.venuesService.getPublicLayout(venueId);
+       this.reservationsGateway.emitVenueLayoutUpdate(venueId, updatedLayout);
+     }
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/reservations.gateway.ts b/OynaAdminPanel-main/Backend/src/reservations/reservations.gateway.ts
+index 4f290fd..f987db1 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/reservations.gateway.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/reservations.gateway.ts
+@@ -10,7 +10,12 @@ import {
+ import { Inject, forwardRef, Logger } from '@nestjs/common';
+ import { Server, Socket } from 'socket.io';
+ import { JwtService } from '@nestjs/jwt';
++import { InjectModel } from '@nestjs/mongoose';
++import { Model, Types } from 'mongoose';
+ import { VenuesService } from '../venues/venues.service';
++import { User, UserDocument } from '../auth/schemas/user.schema';
++import { Reservation } from './schemas/reservation.schema';
++import { Venue, Layout } from '../venues/schemas/venue.schema';
+ 
+ @WebSocketGateway({
+   cors: {
+@@ -29,33 +34,49 @@ export class ReservationsGateway
+     @Inject(forwardRef(() => VenuesService))
+     private readonly venuesService: VenuesService,
+     private readonly jwtService: JwtService,
++    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+   ) {}
+ 
+   async handleConnection(client: Socket) {
+-    const token =
+-      (client.handshake.auth?.token as string) ||
+-      (client.handshake.query?.token as string);
++    let token = client.handshake.auth?.token as string;
++    if (token && token.startsWith('Bearer ')) {
++      token = token.split(' ')[1];
++    }
+ 
+     if (!token) {
+-      this.logger.warn(`WS Connection rejected for socket ${client.id}: Token not provided`);
++      this.logger.warn(`WS Connection rejected for socket ${client.id}: Token not provided in handshake auth`);
+       client.disconnect();
+       return;
+     }
+ 
+     try {
+       const payload = await this.jwtService.verifyAsync(token);
+-      const role = payload.role as string;
+       const userId = payload.sub as string;
+ 
+-      if (role === 'ADMIN' || role === 'SUPER_ADMIN' || client.handshake.query?.role === 'admin') {
++      // Dynamic privilege validation: check role and status in DB
++      const dbUser = await this.userModel
++        .findById(userId)
++        .select('status role')
++        .lean()
++        .exec();
++
++      if (!dbUser || dbUser.status !== 'ACTIVE') {
++        this.logger.warn(`WS Connection rejected for user ${userId}: User is not active or not found`);
++        client.disconnect();
++        return;
++      }
++
++      const role = dbUser.role;
++
++      if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
+         client.join('admins');
+ 
+-        const adminId = payload.sub;
++        const adminId = userId;
+         if (adminId) {
+           try {
+             const venues = await this.venuesService.findAll(adminId);
+             for (const venue of venues) {
+-              const venueId = (venue as any)._id.toString();
++              const venueId = (venue as Venue & { _id: Types.ObjectId })._id.toString();
+               client.join(`venue_${venueId}`);
+             }
+           } catch (err) {
+@@ -73,7 +94,7 @@ export class ReservationsGateway
+         }
+       }
+ 
+-      this.logger.debug(`Secure WS Client connected: ${client.id} | sub: ${payload.sub} | role: ${payload.role}`);
++      this.logger.debug(`Secure WS Client connected: ${client.id} | sub: ${userId} | role: ${role}`);
+     } catch (err) {
+       this.logger.warn(`WS Connection rejected for socket ${client.id}: Invalid token - ${err.message}`);
+       client.disconnect();
+@@ -107,7 +128,7 @@ export class ReservationsGateway
+   }
+ 
+   /** Notify admin about a new reservation — venue room + admins fallback */
+-  emitNewReservation(reservation: any) {
++  emitNewReservation(reservation: Reservation) {
+     const venueId = reservation.venueId?.toString();
+     const emitter = venueId
+       ? this.server.to(`venue_${venueId}`).to('admins')
+@@ -116,7 +137,7 @@ export class ReservationsGateway
+   }
+ 
+   /** Notify admin that a reservation was canceled by the user */
+-  emitReservationCanceled(reservation: any) {
++  emitReservationCanceled(reservation: Reservation) {
+     const venueId = reservation.venueId?.toString();
+     const emitter = venueId
+       ? this.server.to(`venue_${venueId}`).to('admins')
+@@ -125,14 +146,14 @@ export class ReservationsGateway
+   }
+ 
+   /** Notify a specific user about their reservation status change */
+-  emitStatusUpdate(userId: string, reservation: any) {
++  emitStatusUpdate(userId: string, reservation: Reservation) {
+     this.server
+       .to(`user_${userId}`)
+       .emit('reservationStatusUpdate', reservation);
+   }
+ 
+   /** Broadcast venue status changes to all connected users */
+-  emitVenueUpdate(venue: any) {
++  emitVenueUpdate(venue: Venue & { _id?: unknown }) {
+     this.server.emit('venueStatusUpdate', {
+       _id: venue._id,
+       status: venue.status,
+@@ -142,7 +163,7 @@ export class ReservationsGateway
+   }
+ 
+   /** Broadcast venue layout (tables) updates to users viewing that venue */
+-  emitVenueLayoutUpdate(venueId: string, layout: any) {
++  emitVenueLayoutUpdate(venueId: string, layout: Layout) {
+     this.server.to(`venue_${venueId}`).emit('venueLayoutUpdate', {
+       venueId,
+       layout,
+@@ -150,7 +171,7 @@ export class ReservationsGateway
+   }
+ 
+   /** Notify admin that a specific table received a pending reservation — triggers "!" animation */
+-  emitTablePending(venueId: string, tableId: string, reservation: any) {
++  emitTablePending(venueId: string, tableId: string, reservation: Reservation & { _id?: Types.ObjectId }) {
+     const payload = {
+       venueId,
+       tableId,
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/reservations.service.ts b/OynaAdminPanel-main/Backend/src/reservations/reservations.service.ts
+index 700e5c5..2c79da6 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/reservations.service.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/reservations.service.ts
+@@ -7,6 +7,8 @@ import {
+ } from '@nestjs/common';
+ import { InjectModel } from '@nestjs/mongoose';
+ import { Model, Types } from 'mongoose';
++import * as mongoose from 'mongoose';
++import * as crypto from 'crypto';
+ import { VenuesService } from '../venues/venues.service';
+ import {
+   Reservation,
+@@ -26,7 +28,8 @@ export class ReservationsService {
+     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excluded confusing chars like O, 0, I, 1
+     let result = '';
+     for (let i = 0; i < 6; i++) {
+-      result += chars.charAt(Math.floor(Math.random() * chars.length));
++      const randIdx = crypto.randomInt(0, chars.length);
++      result += chars.charAt(randIdx);
+     }
+     return `#${result}`;
+   }
+@@ -104,7 +107,7 @@ export class ReservationsService {
+     limit: number = 10,
+     search?: string
+   ): Promise<{ reservations: Reservation[], pagination: { totalCount: number, totalPages: number, currentPage: number, limit: number } }> {
+-    const query: any = { venueId: { $in: adminVenueIds } };
++    const query: mongoose.QueryFilter<ReservationDocument> = { venueId: { $in: adminVenueIds } };
+     if (search) {
+       const escapedSearch = search.replace(/[.*+?^${}()|[\\]\\\]/g, '\\$&');
+       query.$or = [
+@@ -205,7 +208,7 @@ export class ReservationsService {
+     rejectReason?: string,
+     graceDeadline?: Date,
+   ): Promise<Reservation> {
+-    const updateData: any = { status };
++    const updateData: mongoose.UpdateQuery<ReservationDocument> = { status };
+     if (rejectReason) {
+       updateData.rejectReason = rejectReason;
+     }
+@@ -256,7 +259,7 @@ export class ReservationsService {
+     if (!reservation) {
+       throw new NotFoundException('Rezervasiya tapılmadı.');
+     }
+-    return reservation as any;
++    return reservation as unknown as Reservation;
+   }
+ 
+   /** Auto-reject pending reservations older than 10 minutes */
+@@ -278,7 +281,7 @@ export class ReservationsService {
+   }
+ 
+   /** Find awaiting_arrival reservations whose grace deadline has passed */
+-  async findExpiredAwaiting(): Promise<ReservationDocument[]> {
++  async findExpiredAwaiting(): Promise<Reservation[]> {
+     const now = new Date();
+     return this.reservationModel
+       .find({
+@@ -286,6 +289,6 @@ export class ReservationsService {
+         graceDeadline: { $lte: now },
+       })
+       .lean()
+-      .exec() as any;
++      .exec() as unknown as Reservation[];
+   }
+ }
+diff --git a/OynaAdminPanel-main/Backend/src/reservations/schemas/device-token.schema.ts b/OynaAdminPanel-main/Backend/src/reservations/schemas/device-token.schema.ts
+index 11213a1..b4f1b1e 100644
+--- a/OynaAdminPanel-main/Backend/src/reservations/schemas/device-token.schema.ts
++++ b/OynaAdminPanel-main/Backend/src/reservations/schemas/device-token.schema.ts
+@@ -13,3 +13,6 @@ export class DeviceToken {
+ }
+ 
+ export const DeviceTokenSchema = SchemaFactory.createForClass(DeviceToken);
++
++DeviceTokenSchema.index({ userId: 1 });
++
+diff --git a/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts b/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
+index 8233b4b..f01b07f 100644
+--- a/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
++++ b/OynaAdminPanel-main/Backend/src/venues/dto/venues.dto.ts
+@@ -1,4 +1,5 @@
+-import { IsEmail, IsEnum } from 'class-validator';
++import { IsEmail, IsEnum, IsString, IsOptional, IsObject, IsArray, IsBoolean } from 'class-validator';
++import { GeoLocation, Venue, Tier, SpecPackage, LayoutItem } from '../schemas/venue.schema';
+ 
+ export class BlockUserDto {
+   @IsEmail({}, { message: 'Düzgün e-mail daxil edin.' })
+@@ -7,3 +8,76 @@ export class BlockUserDto {
+   @IsEnum(['block', 'unblock'], { message: 'Fəaliyyət yalnız block və ya unblock ola bilər.' })
+   action: 'block' | 'unblock';
+ }
++
++export class CreateVenueDto {
++  @IsString({ message: 'Məkan adı mətn tipli olmalıdır.' })
++  name: string;
++
++  @IsString({ message: 'Kateqoriya mətn tipli olmalıdır.' })
++  category: string;
++
++  @IsOptional()
++  @IsObject()
++  location?: GeoLocation;
++
++  @IsOptional()
++  @IsObject()
++  operatingHours?: Venue['operatingHours'];
++
++  @IsOptional()
++  @IsObject()
++  contact?: Venue['contact'];
++
++  @IsOptional()
++  @IsObject()
++  bookingRules?: Venue['bookingRules'];
++}
++
++export class UpdateVenueDto {
++  @IsOptional()
++  @IsString()
++  name?: string;
++
++  @IsOptional()
++  @IsString()
++  category?: string;
++
++  @IsOptional()
++  @IsObject()
++  location?: GeoLocation;
++
++  @IsOptional()
++  @IsObject()
++  operatingHours?: Venue['operatingHours'];
++
++  @IsOptional()
++  @IsObject()
++  contact?: Venue['contact'];
++
++  @IsOptional()
++  @IsObject()
++  bookingRules?: Venue['bookingRules'];
++
++  @IsOptional()
++  @IsString()
++  status?: string;
++
++  @IsOptional()
++  @IsBoolean()
++  temporarilyClosed?: boolean;
++}
++
++export class UpdateSpecsDto {
++  @IsOptional()
++  @IsArray()
++  tiers?: Tier[];
++
++  @IsOptional()
++  @IsArray()
++  packages?: SpecPackage[];
++}
++
++export class UpdateLayoutDto {
++  @IsArray()
++  items: LayoutItem[];
++}
+diff --git a/OynaAdminPanel-main/Backend/src/venues/schemas/venue.schema.ts b/OynaAdminPanel-main/Backend/src/venues/schemas/venue.schema.ts
+index 8f55458..a5607d4 100644
+--- a/OynaAdminPanel-main/Backend/src/venues/schemas/venue.schema.ts
++++ b/OynaAdminPanel-main/Backend/src/venues/schemas/venue.schema.ts
+@@ -28,7 +28,7 @@ class FeatureItem {
+ }
+ 
+ @Schema({ _id: false })
+-class Tier {
++export class Tier {
+   @Prop() id: string; // client-generated stable id — referenced by LayoutItem.tierId
+   @Prop() type: string; // 'pc' | 'playstation'
+   @Prop() title: string;
+@@ -43,7 +43,7 @@ class Tier {
+ }
+ 
+ @Schema({ _id: false })
+-class SpecPackage {
++export class SpecPackage {
+   @Prop({ required: true }) title: string; // Fixed: Required title for robustness
+   @Prop() description: string;
+   @Prop() price: number; // Fixed: string -> number
+@@ -51,7 +51,7 @@ class SpecPackage {
+   @Prop({
+     type: Number,
+     validate: {
+-      validator: function (this: any, v: number) {
++      validator: function (this: SpecPackage, v: number) {
+         // validate discountPrice < price
+         const price = this.price;
+         return typeof v !== 'number' || typeof price !== 'number' || v <= price;
+@@ -63,7 +63,7 @@ class SpecPackage {
+ }
+ 
+ @Schema({ _id: false })
+-class Specs {
++export class Specs {
+   @Prop() pageTitle: string;
+   @Prop() pageSubtitle: string;
+   @Prop({ type: [Tier], default: [] }) tiers: Tier[];
+@@ -73,7 +73,7 @@ class Specs {
+ // ── Sub-schemas for Layout (Floor-plan simulator) ──
+ 
+ @Schema({ _id: false })
+-class LayoutItem {
++export class LayoutItem {
+   @Prop({ required: true }) id: string; // client-generated stable id
+   @Prop({ required: true }) type: string; // 'pc' | 'playstation' | 'cabinet'
+   @Prop() tierId?: string; // references Tier.id for PC items
+@@ -96,7 +96,7 @@ class LayoutItem {
+ }
+ 
+ @Schema({ _id: false })
+-class Layout {
++export class Layout {
+   @Prop({ type: [LayoutItem], default: [] }) items: LayoutItem[];
+   @Prop() updatedAt?: Date;
+ }
+@@ -122,7 +122,7 @@ class MediaGalleryItem {
+ }
+ 
+ @Schema({ _id: false })
+-class OperatingScheduleDay {
++export class OperatingScheduleDay {
+   @Prop() open: string;
+   @Prop() close: string;
+   @Prop({ default: false }) closed: boolean;
+@@ -185,7 +185,7 @@ export class Venue {
+   @Prop({
+     type: Object,
+     validate: {
+-      validator: function (v: any) {
++      validator: function (v: { email?: string }) {
+         if (!v || !v.email) return true;
+         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+         return emailRegex.test(v.email);
+diff --git a/OynaAdminPanel-main/Backend/src/venues/venues.controller.ts b/OynaAdminPanel-main/Backend/src/venues/venues.controller.ts
+index 2c3af4b..0121330 100644
+--- a/OynaAdminPanel-main/Backend/src/venues/venues.controller.ts
++++ b/OynaAdminPanel-main/Backend/src/venues/venues.controller.ts
+@@ -20,7 +20,7 @@ import { RolesGuard } from '../auth/roles.guard';
+ import { Roles } from '../auth/roles.decorator';
+ import { ReservationsGateway } from '../reservations/reservations.gateway';
+ import { ParseObjectIdPipe } from '../common/parse-object-id.pipe';
+-import { BlockUserDto } from './dto/venues.dto';
++import { BlockUserDto, CreateVenueDto, UpdateVenueDto, UpdateSpecsDto, UpdateLayoutDto } from './dto/venues.dto';
+ 
+ interface AuthRequest extends Request {
+   user: { sub: string; email: string; displayName?: string; role: string };
+@@ -37,7 +37,7 @@ export class VenuesController {
+   ) {}
+ 
+   @Post()
+-  create(@Body() dto: Partial<Venue>, @Req() req: AuthRequest) {
++  create(@Body() dto: CreateVenueDto, @Req() req: AuthRequest) {
+     return this.venuesService.create({
+       ...dto,
+       adminId: new Types.ObjectId(req.user.sub),
+@@ -62,7 +62,7 @@ export class VenuesController {
+   @Patch(':id')
+   async update(
+     @Param('id', ParseObjectIdPipe) id: string,
+-    @Body() dto: Partial<Venue>,
++    @Body() dto: UpdateVenueDto,
+     @Req() req: AuthRequest,
+   ) {
+     const updatedVenue = await this.venuesService.update(id, dto, req.user.sub);
+@@ -114,7 +114,7 @@ export class VenuesController {
+   @Patch(':id/specs')
+   updateSpecs(
+     @Param('id', ParseObjectIdPipe) id: string,
+-    @Body() specsDto: any,
++    @Body() specsDto: UpdateSpecsDto,
+     @Req() req: AuthRequest,
+   ) {
+     return this.venuesService.updateSpecs(id, specsDto, req.user.sub);
+@@ -132,7 +132,7 @@ export class VenuesController {
+   @Patch(':id/layout')
+   async updateLayout(
+     @Param('id', ParseObjectIdPipe) id: string,
+-    @Body() layoutDto: any,
++    @Body() layoutDto: UpdateLayoutDto,
+     @Req() req: AuthRequest,
+   ) {
+     const updatedLayout = await this.venuesService.updateLayout(id, layoutDto, req.user.sub);
+diff --git a/OynaAdminPanel-main/Backend/src/venues/venues.service.ts b/OynaAdminPanel-main/Backend/src/venues/venues.service.ts
+index 8111c22..e35f2ee 100644
+--- a/OynaAdminPanel-main/Backend/src/venues/venues.service.ts
++++ b/OynaAdminPanel-main/Backend/src/venues/venues.service.ts
+@@ -7,9 +7,11 @@ import {
+ } from '@nestjs/common';
+ import { InjectModel } from '@nestjs/mongoose';
+ import { Model } from 'mongoose';
++import * as mongoose from 'mongoose';
+ import { toObjectId } from '../common/object-id.util';
+-import { Venue, VenueDocument } from './schemas/venue.schema';
++import { Venue, VenueDocument, GeoLocation, Specs, Layout, LayoutItem } from './schemas/venue.schema';
+ import { RedisService } from '../redis/redis.service';
++import { UpdateSpecsDto, UpdateLayoutDto } from './dto/venues.dto';
+ 
+ // ═══════════════════════════════════════════════
+ // Cache Key Constants & TTL
+@@ -33,8 +35,15 @@ export class VenuesService {
+     private readonly redisService: RedisService,
+   ) {}
+ 
+-  private normalizeLocation(location?: any) {
+-    if (!location) return location;
++  private normalizeLocation(location?: {
++    type?: string;
++    coordinates?: number[];
++    lng?: number;
++    lat?: number;
++    city?: string;
++    address?: string;
++  } | null) {
++    if (!location) return undefined;
+ 
+     if (
+       Array.isArray(location.coordinates) &&
+@@ -60,17 +69,28 @@ export class VenuesService {
+       };
+     }
+ 
+-    return location;
++    if (location.type === 'Point' && Array.isArray(location.coordinates)) {
++      return {
++        type: 'Point',
++        coordinates: location.coordinates,
++        city: location.city || '',
++        address: location.address || '',
++      };
++    }
++
++    return undefined;
+   }
+ 
+   /** Helper to append branch name to venue name for display purposes */
+-  private formatVenueWithBranch(venue: any): any {
++  private formatVenueWithBranch<T extends Venue>(venue: T): T {
+     if (!venue) return venue;
+-    const v = venue.toObject ? venue.toObject() : venue;
++    const v = 'toObject' in venue && typeof (venue as { toObject?: unknown }).toObject === 'function'
++      ? (venue as { toObject: () => T }).toObject()
++      : { ...venue };
+     if (v.branches && v.branches.length > 0 && v.branches[0]) {
+       v.name = `${v.name} - ${v.branches[0]}`;
+     }
+-    return v;
++    return v as T;
+   }
+ 
+   private normalizeVenuePayload(payload: Partial<Venue>): Partial<Venue> {
+@@ -104,7 +124,7 @@ export class VenuesService {
+   }
+ 
+   // Get all venues for the list filtered by adminId
+-  async findAll(adminId: string): Promise<any[]> {
++  async findAll(adminId: string): Promise<Venue[]> {
+     const venues = await this.venueModel.find({ adminId: toObjectId(adminId) }).lean().exec();
+     return venues.map(v => this.formatVenueWithBranch(v));
+   }
+@@ -118,7 +138,7 @@ export class VenuesService {
+     if (!venue) {
+       throw new NotFoundException(`Məkan tapılmadı və ya icazəniz yoxdur.`);
+     }
+-    return venue as any;
++    return venue as unknown as Venue;
+   }
+ 
+   // ═══════════════════════════════════════════════
+@@ -225,7 +245,7 @@ export class VenuesService {
+     hasMore: boolean;
+   }> {
+     const skip = (page - 1) * limit;
+-    const match: any = {
++    const match: mongoose.QueryFilter<Venue> = {
+       status: { $in: ['ACTIVE', 'PUBLISHED', 'INACTIVE'] },
+     };
+ 
+@@ -248,7 +268,7 @@ export class VenuesService {
+       // and ideally the frontend can filter or we can refine this later.
+     }
+ 
+-    const pipeline: any[] = [];
++    const pipeline: mongoose.PipelineStage[] = [];
+ 
+     // 1. Geo-Near Stage (Must be first if sorting by distance)
+     if (sortBy === 'distance' && lat !== undefined && lng !== undefined) {
+@@ -287,7 +307,7 @@ export class VenuesService {
+     const dataRaw = result.data || [];
+     const total = result.totalCount?.[0]?.count || 0;
+ 
+-    const data = dataRaw.map((v: any) => this.formatVenueWithBranch(v));
++    const data = dataRaw.map((v: Venue) => this.formatVenueWithBranch(v));
+ 
+     return {
+       data,
+@@ -322,7 +342,7 @@ export class VenuesService {
+     return updatedVenue;
+   }
+ 
+-  async remove(id: string, adminId: string): Promise<any> {
++  async remove(id: string, adminId: string): Promise<VenueDocument> {
+     const result = await this.venueModel
+       .findOneAndDelete({ _id: id, adminId: toObjectId(adminId) })
+       .exec();
+@@ -378,7 +398,7 @@ export class VenuesService {
+   // SPECS METHODS (Step 4 — Tiers & Packages)
+   // ═══════════════════════════════════════════════
+ 
+-  async getSpecs(id: string, adminId: string): Promise<any> {
++  async getSpecs(id: string, adminId: string): Promise<Specs> {
+     const venue = await this.venueModel
+       .findOne({ _id: id, adminId: toObjectId(adminId) })
+       .select('specs')
+@@ -396,7 +416,7 @@ export class VenuesService {
+     );
+   }
+ 
+-  async updateSpecs(id: string, specsDto: any, adminId: string): Promise<any> {
++  async updateSpecs(id: string, specsDto: UpdateSpecsDto, adminId: string): Promise<Specs> {
+     const updatedVenue = await this.venueModel
+       .findOneAndUpdate(
+         { _id: id, adminId: toObjectId(adminId) },
+@@ -413,14 +433,14 @@ export class VenuesService {
+     // ✅ Invalidate detail cache for this venue
+     await this.redisService.del(CACHE_KEYS.DETAIL(id));
+ 
+-    return updatedVenue.specs;
++    return updatedVenue.specs as Specs;
+   }
+ 
+   // ═══════════════════════════════════════════════
+   // LAYOUT METHODS (Floor-plan simulator)
+   // ═══════════════════════════════════════════════
+ 
+-  async getLayout(id: string, adminId: string): Promise<any> {
++  async getLayout(id: string, adminId: string): Promise<Layout> {
+     const venue = await this.venueModel
+       .findOne({ _id: id, adminId: toObjectId(adminId) })
+       .select('layout')
+@@ -432,7 +452,7 @@ export class VenuesService {
+   }
+ 
+   /** Get layout for public use (Flutter floor plan) — no admin auth required */
+-  async getPublicLayout(id: string): Promise<any> {
++  async getPublicLayout(id: string): Promise<Layout> {
+     const cacheKey = CACHE_KEYS.DETAIL(id);
+     try {
+       const cached = await this.redisService.get<Venue>(cacheKey);
+@@ -451,7 +471,7 @@ export class VenuesService {
+     if (!venue) {
+       throw new NotFoundException('Məkan tapılmadı.');
+     }
+-    return (venue as any).layout || { items: [] };
++    return venue.layout || { items: [] };
+   }
+ 
+   /** Update a single table's status inside venue layout */
+@@ -491,7 +511,7 @@ export class VenuesService {
+       .exec();
+     if (!venue) return {};
+ 
+-    const items: any[] = (venue as any).layout?.items || [];
++    const items = venue.layout?.items || [];
+     const counts: Record<string, number> = {};
+ 
+     for (const item of items) {
+@@ -512,7 +532,7 @@ export class VenuesService {
+   }
+ 
+   /** Find a random available table for a given tierId or tierTitle */
+-  async findRandomAvailableTable(venueId: string, tierId: string, tierTitle?: string): Promise<any | null> {
++  async findRandomAvailableTable(venueId: string, tierId: string, tierTitle?: string): Promise<LayoutItem | null> {
+     const venue = await this.venueModel
+       .findById(venueId)
+       .select('layout')
+@@ -520,11 +540,11 @@ export class VenuesService {
+       .exec();
+     if (!venue) return null;
+ 
+-    const items: any[] = (venue as any).layout?.items || [];
++    const items = venue.layout?.items || [];
+     
+     this.logger.debug(`findRandomAvailableTable called with tierId="${tierId}", tierTitle="${tierTitle}"`);
+ 
+-    const matchesTier = (itemTierId: string) => {
++    const matchesTier = (itemTierId?: string) => {
+       if (!itemTierId) return false;
+       if (itemTierId === tierId) return true;
+       if (tierTitle && itemTierId === tierTitle) return true;
+@@ -545,7 +565,7 @@ export class VenuesService {
+     return availables[randomIndex];
+   }
+ 
+-  async updateLayout(id: string, layoutDto: any, adminId: string): Promise<any> {
++  async updateLayout(id: string, layoutDto: UpdateLayoutDto, adminId: string): Promise<Layout> {
+     const updatedVenue = await this.venueModel
+       .findOneAndUpdate(
+         { _id: id, adminId: toObjectId(adminId) },
+@@ -569,7 +589,7 @@ export class VenuesService {
+     // ✅ Invalidate detail cache (layout is part of venue document)
+     await this.redisService.del(CACHE_KEYS.DETAIL(id));
+ 
+-    return updatedVenue.layout;
++    return updatedVenue.layout as Layout;
+   }
+ 
+   // ═══════════════════════════════════════════════

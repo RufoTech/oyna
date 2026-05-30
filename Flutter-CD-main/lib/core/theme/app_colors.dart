@@ -67,6 +67,9 @@ class AppColors {
   static const Color background = Color(0xFFFFFFFF);
   static const Color onBackground = Color(0xFF000000);
 
+  // Scaffold Background (used across many screens)
+  static const Color scaffoldBackground = Color(0xFFF9F9FE);
+
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
     begin: Alignment.topLeft,

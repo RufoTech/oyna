@@ -211,9 +211,9 @@ class _MyReservationsScreenState extends State<MyReservationsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F9FE),
+      backgroundColor: AppColors.scaffoldBackground,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF9F9FE),
+        backgroundColor: AppColors.scaffoldBackground,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(

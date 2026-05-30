@@ -59,7 +59,9 @@ export class UpdateVenueDto {
   bookingRules?: Venue['bookingRules'];
 
   @IsOptional()
-  @IsString()
+  @IsEnum(['DRAFT', 'ACTIVE', 'INACTIVE', 'PUBLISHED'], {
+    message: 'Status yalnız DRAFT, ACTIVE, INACTIVE və ya PUBLISHED ola bilər.',
+  })
   status?: string;
 
   @IsOptional()

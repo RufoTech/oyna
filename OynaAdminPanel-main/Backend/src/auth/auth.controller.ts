@@ -29,6 +29,8 @@ import {
   ResetPasswordDto,
   GoogleLoginDto,
   ResetAdminPasswordDto,
+  UpdateProfileDto,
+  RefreshTokenDto,
 } from './dto/auth.dto';
 
 interface AuthRequest extends Request {
@@ -163,6 +165,7 @@ export class AuthController {
     return this.authService.resetPassword(id, dto.password);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('google')
   async googleLogin(
@@ -198,8 +201,22 @@ export class AuthController {
   @Patch('profile')
   async updateProfile(
     @Req() req: AuthRequest,
-    @Body() body: { displayName?: string },
+    @Body() dto: UpdateProfileDto,
   ) {
-    return this.authService.updateProfile(req.user.sub, body);
+    return this.authService.updateProfile(req.user.sub, dto);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('refresh')
+  async refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refreshTokens(dto.refreshToken);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('logout')
+  async logout(@Req() req: AuthRequest) {
+    return this.authService.logout(req.user.sub);
   }
 }

@@ -20,7 +20,7 @@ class DiscoveredVenuesScreen extends ConsumerWidget {
     final discoveredState = ref.watch(discoveredVenuesProvider(userId));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F9FE),
+      backgroundColor: AppColors.scaffoldBackground,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,

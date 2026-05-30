@@ -57,7 +57,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (ctx) {
         return Container(
           decoration: const BoxDecoration(
-            color: Color(0xFFF9F9FE),
+            color: AppColors.scaffoldBackground,
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           padding: EdgeInsets.fromLTRB(
@@ -165,7 +165,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final currentLanguageName = localeDisplayNames[currentLocale.languageCode] ?? currentLocale.languageCode;
 
     return Container(
-      color: const Color(0xFFF9F9FE),
+      color: AppColors.scaffoldBackground,
       child: Stack(
         children: [
           // Scrollable Content
@@ -622,7 +622,7 @@ class _DeleteAccountSheetState extends State<_DeleteAccountSheet> {
 
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFFF9F9FE),
+        color: AppColors.scaffoldBackground,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.fromLTRB(

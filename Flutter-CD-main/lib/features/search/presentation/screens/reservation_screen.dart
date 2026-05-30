@@ -517,7 +517,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF9F9FE),
+        backgroundColor: AppColors.scaffoldBackground,
         body: Stack(
           children: [
             Column(
